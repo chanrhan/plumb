@@ -1,0 +1,7 @@
+# 각각 별도 git 레포
+service/
+plumb/
+plumb-store/
+
+# 역할별 임시 작업 디렉토리
+.work/

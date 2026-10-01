@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(/plumb-store/**)",
+      "Write(/plumb-store/**)"
+    ]
+  }
+}
