@@ -2,14 +2,25 @@
  * `@plumb/adapter-nextjs` — 첫 어댑터 뼈대 (이슈 #8, 기획안 §4.4).
  *
  * 대상 스택: Next.js + PostgreSQL + Prisma + Vitest + fast-check + Playwright + dependency-cruiser + OpenTelemetry.
- * 구현된 메서드: `extractDependencies`(#45) · `runTests`(#44). 나머지는 {@link NotImplementedError}를 던지며,
- * 구현 마일스톤은 `docs/ROADMAP.md` — M4 generateStubs · M8 readSchemas · collectTraces.
+ * 구현된 메서드: `extractDependencies`(#45) · `runTests`(#44) · `collectTraces`(#59). 나머지는 {@link NotImplementedError}를 던지며,
+ * 구현 마일스톤은 `docs/ROADMAP.md` — M4 generateStubs · M8 readSchemas.
+ * 인터페이스 밖의 추가 능력: 정적 호출 그래프 `buildCallGraph`(#59, 코어 `CallGraphProvider`) — 흐름도 View가 덕 타이핑으로 찾는다.
  */
 
-import { type Adapter, type AdapterName, NotImplementedError, registerAdapter } from '@plumb/core';
+import {
+  type Adapter,
+  type AdapterName,
+  type CallGraphProvider,
+  NotImplementedError,
+  registerAdapter,
+} from '@plumb/core';
+import { buildCallGraph } from './call-graph.js';
+import { collectTraces } from './collect-traces.js';
 import { extractDependencies } from './extract-dependencies.js';
 import { runTests } from './run-tests.js';
 
+export * from './call-graph.js';
+export * from './collect-traces.js';
 export * from './extract-dependencies.js';
 export { runTests } from './run-tests.js';
 export {
@@ -25,7 +36,7 @@ export {
 export const ADAPTER_NAME: AdapterName = 'nextjs';
 
 /** Next.js 어댑터. 미구현 메서드의 예정 마일스톤은 던지는 오류에 적혀 있다 */
-export const nextjsAdapter: Adapter = {
+export const nextjsAdapter: Adapter & CallGraphProvider = {
   name: ADAPTER_NAME,
 
   /** dependency-cruiser JSON + `config.blocks` → 블록 그래프 JSON (#45, `extract-dependencies.ts`) */
@@ -44,10 +55,11 @@ export const nextjsAdapter: Adapter = {
     throw new NotImplementedError('readSchemas', 'M8');
   },
 
-  /** OTLP JSON 트레이스 파일 → 스팬. M8 wave 1 흐름도 spike */
-  async collectTraces() {
-    throw new NotImplementedError('collectTraces', 'M8');
-  },
+  /** Vitest + `instrumentation-test.ts` → `reports/traces/*.jsonl` → 스팬. 파일이 없으면 `unavailable` (#59, `collect-traces.ts`) */
+  collectTraces: (ctx, opts) => collectTraces(ctx, opts),
+
+  /** TS 컴파일러 API 정적 호출 그래프 — 흐름도의 점선(A안) · 본체(B안) (#59, `call-graph.ts`) */
+  buildCallGraph: (ctx) => buildCallGraph(ctx),
 };
 
 /**

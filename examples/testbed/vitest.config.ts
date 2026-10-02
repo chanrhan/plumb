@@ -18,7 +18,8 @@ export default defineConfig({
     outputFile: { junit: 'reports/junit.xml' },
     // 테스트가 0개여도(지금) 통과하고 junit.xml은 생긴다
     passWithNoTests: true,
-    setupFiles: ['./test/setup.ts'],
+    // OTel 스팬 수집(#59 → A안). 테스트별 루트 스팬 + 블록 공개 진입점 래핑 + Prisma 계측 → reports/traces/*.jsonl
+    setupFiles: ['./test/setup.ts', './instrumentation-test.ts'],
     env: { DATABASE_URL },
     // DB를 쓰는 테스트는 파일 단위 프로세스 격리로 돌린다
     pool: 'forks',
