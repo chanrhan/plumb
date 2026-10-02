@@ -5,7 +5,7 @@
  * `rules.yaml`을 바꾸는 유일한 길은 `approvals.approve()`다 (기획안 §10).
  */
 
-import type { PlumbConfig, Proposal, ProposalId, Rule, RuleId } from '../types/index.js';
+import type { CheckRun, PlumbConfig, Proposal, ProposalId, Rule, RuleId, RuleStatusRecord } from '../types/index.js';
 import {
   type ApprovalRecord,
   type ApproveInput,
@@ -16,13 +16,16 @@ import {
   type RejectResult,
   reject,
 } from './approvals.js';
+import { latestCheckRun, listCheckRuns, writeCheckRun } from './checks.js';
 import { initStore, type StoreMeta } from './init.js';
 import { type StorePaths, storePaths } from './paths.js';
 import { getProposal, listProposals, writeProposal } from './proposals.js';
+import { getRuleStatus, listRuleStatuses, writeRuleStatuses } from './rule-status.js';
 import { getRule, listRules } from './rules.js';
 import { type StoreStatus, storeStatus } from './status.js';
 
 export * from './approvals.js';
+export * from './checks.js';
 export * from './errors.js';
 export * from './init.js';
 export * from './paths.js';
@@ -36,6 +39,7 @@ export {
   proposalSchema,
   writeProposal,
 } from './proposals.js';
+export * from './rule-status.js';
 export {
   checkKindSchema,
   checkRefSchema,
@@ -90,6 +94,19 @@ export interface Store {
     reject(input: RejectInput): Promise<RejectResult>;
     history(ruleId: RuleId): Promise<ApprovalRecord[]>;
   };
+  /** 검사 실행 기록 `checks/<c-id>.json` — 실행: `plumb check`가 쓴다. 상태 계산의 입력이자 진실 */
+  checks: {
+    write(run: CheckRun | unknown): Promise<CheckRun>;
+    /** 시각순 (오래된 것부터) */
+    list(): Promise<CheckRun[]>;
+    latest(): Promise<CheckRun | null>;
+  };
+  /** 규칙별 상태 기록 `rule-status/<ruleId>.json` — `computeRuleStatuses()`의 출력. `rule list` · UI 상태 열이 읽는다 */
+  ruleStatus: {
+    write(records: RuleStatusRecord[] | unknown[]): Promise<RuleStatusRecord[]>;
+    get(ruleId: RuleId): Promise<RuleStatusRecord | undefined>;
+    list(): Promise<RuleStatusRecord[]>;
+  };
   status(): Promise<StoreStatus>;
 }
 
@@ -115,6 +132,16 @@ export function openStore(config: StoreConfig, root: string, options: StoreOptio
       approve: (input) => approve(paths, approvalConfig, input, timing),
       reject: (input) => reject(paths, input, timing),
       history: (ruleId) => listApprovals(paths, ruleId),
+    },
+    checks: {
+      write: (run) => writeCheckRun(paths, run),
+      list: () => listCheckRuns(paths),
+      latest: () => latestCheckRun(paths),
+    },
+    ruleStatus: {
+      write: (records) => writeRuleStatuses(paths, records),
+      get: (ruleId) => getRuleStatus(paths, ruleId),
+      list: () => listRuleStatuses(paths),
     },
     status: () => storeStatus(paths, timing),
   };
