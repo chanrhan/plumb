@@ -1,3 +1,5 @@
 - 포트 4817 (`pnpm --filter @plumb/ui dev` → http://127.0.0.1:4817, `/` 는 `/views` 로 간다)
-- 127.0.0.1 에만 바인드한다. 1인용 로컬 도구, 사용자 인증 없음 (토큰 흐름은 M3 #17, `docs/screens/README.md` 3.2)
+- 127.0.0.1 에만 바인드한다. 1인용 로컬 도구, 사용자 인증 없음. 승인 통로는 `plumb ui` 가 만든 일회용 토큰 → `/auth?token=` → 쿠키 `plumb_session` (`docs/screens/README.md` 3.2, #33). 쿠키 없는 `/api/**` 는 401, 페이지는 `/no-session`
+- 토큰은 환경변수 `PLUMB_UI_TOKEN` 으로만 들어온다. `pnpm --filter @plumb/ui dev` 로 직접 띄우면 토큰이 없어 **전부 401** 이다 — 화면을 보려면 `plumb ui --dev`
+- 테스트: `pnpm --filter @plumb/ui test` (vitest, `__tests__/`)
 - `@plumb/core` 는 import 만 한다. 코어에 HTTP 서버는 없고, 이 앱이 코어의 두 입구(CLI · UI) 중 하나다 (`docs/screens/README.md` 3.1)

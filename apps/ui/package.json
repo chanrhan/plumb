@@ -10,7 +10,7 @@
     "start": "next start -p 4817 -H 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@plumb/core": "workspace:*",

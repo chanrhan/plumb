@@ -1,0 +1,20 @@
+{
+  "id": "p-0001",
+  "ruleId": "pay.refund-window",
+  "changeKind": "add",
+  "proposedBy": "cli",
+  "proposedAt": "2026-10-02T00:00:00.000Z",
+  "after": {
+    "id": "pay.refund-window",
+    "block": "payment",
+    "kind": "business",
+    "statement": "WHEN 환불 요청이 결제 후 7일을 초과하면 THE SYSTEM SHALL 요청을 거절한다",
+    "source": "plan:PAY-02",
+    "risk": "high",
+    "depends_on": [],
+    "checks": ["test/acceptance/refund-window.property.spec.ts"],
+    "decision": "D-0001"
+  },
+  "requiresPriorApproval": false,
+  "applied": "provisional"
+}
