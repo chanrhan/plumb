@@ -5,7 +5,17 @@
  * `rules.yaml`을 바꾸는 유일한 길은 `approvals.approve()`다 (기획안 §10).
  */
 
-import type { CheckRun, PlumbConfig, Proposal, ProposalId, Rule, RuleId, RuleStatusRecord } from '../types/index.js';
+import type {
+  CheckRun,
+  PlumbConfig,
+  Proposal,
+  ProposalId,
+  Rule,
+  RuleId,
+  RuleStatusRecord,
+  View,
+  ViewName,
+} from '../types/index.js';
 import {
   type ApprovalRecord,
   type ApproveInput,
@@ -23,6 +33,7 @@ import { getProposal, listProposals, writeProposal } from './proposals.js';
 import { getRuleStatus, listRuleStatuses, writeRuleStatuses } from './rule-status.js';
 import { getRule, listRules } from './rules.js';
 import { type StoreStatus, storeStatus } from './status.js';
+import { listViews, readView, type StoredView, type ViewListItem, writeView } from './views.js';
 
 export * from './approvals.js';
 export * from './checks.js';
@@ -63,6 +74,7 @@ export {
   toRuleYaml,
 } from './rules.js';
 export * from './status.js';
+export * from './views.js';
 
 /** `openStore`가 보는 설정 부분. `loadConfig()` 결과의 `config`를 그대로 넘기면 된다 */
 export type StoreConfig = Pick<PlumbConfig, 'store' | 'blocks'>;
@@ -107,6 +119,17 @@ export interface Store {
     get(ruleId: RuleId): Promise<RuleStatusRecord | undefined>;
     list(): Promise<RuleStatusRecord[]>;
   };
+  /**
+   * View `views/<name>.json`(정본) · `views/<name>.md`(렌더링) — `plumb views`(#60)가 쓰고 UI `/views`가 읽는다.
+   * 두 파일의 머리말 `generatedAt`은 항상 같다 (`write`가 JSON 머리말에서 Markdown front matter를 만든다)
+   */
+  views: {
+    write(name: ViewName, view: View | unknown, markdown: string): Promise<StoredView>;
+    /** JSON이 없으면 `null` (→ API 404). Markdown만 없으면 오류 — 반쪽을 그리지 않는다 */
+    read(name: ViewName): Promise<StoredView | null>;
+    /** 탭 순서 (VIEW_NAMES) */
+    list(): Promise<ViewListItem[]>;
+  };
   status(): Promise<StoreStatus>;
 }
 
@@ -142,6 +165,11 @@ export function openStore(config: StoreConfig, root: string, options: StoreOptio
       write: (records) => writeRuleStatuses(paths, records),
       get: (ruleId) => getRuleStatus(paths, ruleId),
       list: () => listRuleStatuses(paths),
+    },
+    views: {
+      write: (name, view, markdown) => writeView(paths, name, view, markdown),
+      read: (name) => readView(paths, name),
+      list: () => listViews(paths),
     },
     status: () => storeStatus(paths, timing),
   };
