@@ -20,6 +20,7 @@ import {
   loadConfig,
   openStore,
   type PlumbConfig,
+  type SchemaSet,
   type ViewContext,
 } from '@plumb/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -27,7 +28,6 @@ import { nextjsAdapter } from '../index.js';
 import {
   contractPaths,
   DEFAULT_CONTRACT_PATHS,
-  type NextjsSchemaSet,
   PrismaLineFinder,
   prismaToolInfo,
   readSchemas,
@@ -54,7 +54,7 @@ const baseConfig: PlumbConfig = {
 
 describe('readSchemas — examples/testbed 실제', () => {
   let ctx: AdapterContext;
-  let set: NextjsSchemaSet;
+  let set: SchemaSet;
 
   beforeAll(async () => {
     const loaded = await loadConfig({ target: TESTBED });
@@ -161,14 +161,14 @@ describe('readSchemas — examples/testbed 실제', () => {
     expect(r422?.schema?.name).toBe('Error');
     expect(r422?.description).toContain('REFUND_WINDOW_EXCEEDED');
 
-    expect(set.openapi.data.schemas.map((s) => s.name)).toEqual([
+    expect(set.openapi.data.schemas?.map((s) => s.name)).toEqual([
       'CreatePaymentBody',
       'CreateRefundBody',
       'Error',
       'Payment',
       'Refund',
     ]);
-    const paymentSchema = set.openapi.data.schemas.find((s) => s.name === 'Payment');
+    const paymentSchema = set.openapi.data.schemas?.find((s) => s.name === 'Payment');
     expect(paymentSchema?.properties.map((p) => p.name)).toEqual(['id', 'amount', 'currency', 'paidAt', 'status']);
     expect(paymentSchema?.properties.find((p) => p.name === 'paidAt')).toEqual({
       name: 'paidAt',

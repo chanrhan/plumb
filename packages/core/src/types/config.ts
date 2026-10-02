@@ -1,4 +1,4 @@
-// 원본: docs/types/config.ts (#5). 이후 정본은 이 파일.
+// 원본: docs/types/config.ts (#5). 정본은 이 파일. #63에서 보완.
 /**
  * `plumb.config.json` — 대상 레포 안의 설정 파일. 출처 접두어는 `파서:` (README 2.1, view-architecture 머리).
  *

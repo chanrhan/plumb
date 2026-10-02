@@ -44,7 +44,7 @@ function commitMatches(linked: string, commit: string): boolean {
 
 /** 1~3번 — 명시 연결 */
 export function matchesExplicitly(decision: DecisionRecord, event: DetectedEvent): boolean {
-  if (decision.links.events.includes(event.id)) return true;
+  if ((decision.links.events ?? []).includes(event.id)) return true;
   if (decision.links.commits.some((c) => commitMatches(c, event.commit))) return true;
   const keys = event.keys;
   if ((keys.packages ?? []).some((pkg) => (decision.links.packages ?? []).includes(pkg))) return true;

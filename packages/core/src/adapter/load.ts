@@ -14,9 +14,8 @@
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { StaticRunner } from '../checks/run-check.js';
 import { resolveAdapter } from './registry.js';
-import type { Adapter, AdapterName } from './types.js';
+import type { Adapter, AdapterName, StaticRunner } from './types.js';
 
 /** 어댑터 이름 → 패키지 이름 */
 export const ADAPTER_PACKAGES: Record<AdapterName, string> = { nextjs: '@plumb/adapter-nextjs' };

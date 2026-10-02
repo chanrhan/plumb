@@ -10,8 +10,8 @@
  * 해시 체인(변경 로그 전체)은 M10. 여기서는 마지막 승인의 해시 하나만 본다.
  */
 
-import type { CheckRun, LastCheck, StatusResponse } from '../types/index.js';
-import { type ApprovalRecord, listAllApprovals } from './approvals.js';
+import type { Approval, CheckRun, LastCheck, StatusResponse } from '../types/index.js';
+import { listAllApprovals } from './approvals.js';
 import { latestCheckRun } from './checks.js';
 import { listFiles, readJsonFile } from './fs.js';
 import { EMPTY_RULES_HASH } from './init.js';
@@ -27,7 +27,7 @@ export interface StoreStatus {
   /** 현재 `rules.yaml`의 sha256 */
   rulesHash: string;
   /** 비교 대상 — 가장 최근 승인 줄의 `rulesHash`. 승인 기록이 없으면 null */
-  lastApproval: ApprovalRecord | null;
+  lastApproval: Approval | null;
   /** `rules.yaml`의 규칙 수 */
   rulesCount: number;
   /** `rules.yaml`에 있고 마지막 승인 기록이 `approve`인 규칙 수 */
@@ -49,8 +49,8 @@ export interface StoreStatusOptions {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function latestApprovalWithHash(records: ApprovalRecord[]): ApprovalRecord | null {
-  let latest: ApprovalRecord | null = null;
+function latestApprovalWithHash(records: Approval[]): Approval | null {
+  let latest: Approval | null = null;
   for (const record of records) {
     if (record.action !== 'approve' || record.rulesHash === undefined) continue;
     if (latest === null || record.at.localeCompare(latest.at) >= 0) latest = record;
@@ -59,8 +59,8 @@ function latestApprovalWithHash(records: ApprovalRecord[]): ApprovalRecord | nul
 }
 
 /** 규칙별 마지막 승인 줄 (action 무관) */
-function latestByRule(records: ApprovalRecord[]): Map<string, ApprovalRecord> {
-  const map = new Map<string, ApprovalRecord>();
+function latestByRule(records: Approval[]): Map<string, Approval> {
+  const map = new Map<string, Approval>();
   for (const record of records) {
     const prev = map.get(record.ruleId);
     if (prev === undefined || record.at.localeCompare(prev.at) >= 0) map.set(record.ruleId, record);

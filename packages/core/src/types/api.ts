@@ -1,4 +1,4 @@
-// 원본: docs/types/api.ts (#5). 이후 정본은 이 파일.
+// 원본: docs/types/api.ts (#5). 정본은 이 파일. #63에서 보완.
 /**
  * UI 서버 API 요청·응답 타입과 오류 코드 — README 3.3 표 + 이슈 #5 코멘트(#2·#3에서 넘어온 항목).
  *
@@ -25,7 +25,7 @@ import type {
   CheckRef,
 } from './rules.js';
 import type { RunId, RunState, RunSummary } from './run.js';
-import type { Anchor, BlockNode, View, ViewHeader, ViewName } from './views.js';
+import type { Anchor, BlockNode, LastCheck, View, ViewHeader, ViewName } from './views.js';
 
 // ---------------------------------------------------------------------------
 // 오류
@@ -36,7 +36,8 @@ import type { Anchor, BlockNode, View, ViewHeader, ViewName } from './views.js';
  * 401 세션 없음 · 400 요청이 성립하지 않음 · 404 없음 · 409 화면이 본 것과 서버 상태가 다름 · 500 프로세스 실패.
  */
 export type ApiError =
-  | { status: 401; code: 'unauthenticated'; message: string }
+  /** 세션 쿠키 없음 · 불일치. `code`는 이슈 #33 · 미들웨어 구현 그대로 `UNAUTHORIZED` (#42에서 초안 `unauthenticated`와 어긋나 있던 것을 #63에서 맞춤) */
+  | { status: 401; code: 'UNAUTHORIZED'; message: string }
   | {
       status: 400;
       /** `rule-not-approved`: 미승인 규칙 포함 (work-run 4절) · `queue-limit`: 대기열 상한으로 신규 제안 중단 (M10, §9.2) · `no-budget`: 상한 없음 (work-run 5절) · `reason-required`: 기각 사유 비어 있음 */
@@ -46,7 +47,13 @@ export type ApiError =
       /** `rules-parse-error`일 때 줄 번호 (work-approve 4절) */
       line?: number;
     }
-  | { status: 404; code: 'view-not-found' | 'rule-not-found' | 'run-not-found' | 'proposal-not-found'; message: string }
+  | {
+      status: 404;
+      code: 'view-not-found' | 'rule-not-found' | 'run-not-found' | 'proposal-not-found';
+      message: string;
+      /** `view-not-found`일 때: 여섯 이름이 아님(`unknown-view`) vs 아직 생성 안 됨(`not-generated` → 탭 비활성) (#71) */
+      reason?: 'unknown-view' | 'not-generated';
+    }
   | {
       status: 409;
       /** `proposal-changed`: 화면을 연 뒤 제안이 바뀜(재제안 · CLI 승인) → 다시 읽기 (work-approve 4절) · `run-in-progress`: 동시 실행 1개 (work-run 6절 1번) · `run-finished`: 이미 끝난 실행에 abort · `store-tampered`: 변조 증거 상태에서는 승인하지 않는다 (M10) */
@@ -64,7 +71,7 @@ export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError 
 // ---------------------------------------------------------------------------
 
 export interface StatusResponse {
-  /** 파서: `plumb.config.json` 대상 경로 이름 */
+  /** 파서: 대상 루트(`plumb.config.json`이 있는 폴더)의 basename — `config.service`의 basename이 아니다 (#38) */
   project: string;
   /** 실행: 해시 체인 검증 (M3는 `ok` 고정) */
   store: { status: 'ok' | 'tampered' | 'unverified' };
@@ -98,6 +105,8 @@ export interface RuleListItem {
   kind: RuleKind;
   statement: string;
   status: RuleStatus;
+  /** 상태의 근거(사유). 목록에서 "⬜ 검사 파일 없음"처럼 사유를 보일 때 (#62). CLI `rule list`가 쓴다 — UI 목록은 M10 */
+  statusDetail?: RuleStatusDetail;
   /** 상태의 커밋 · 시각. 검사 이력 없으면 없음 ("검사 없음") */
   statusAt?: { commit: string; checkedAt: string };
   approval: ApprovalState;
@@ -119,6 +128,8 @@ export interface RuleListFilter {
 
 export interface RuleListResponse {
   rules: RuleListItem[];
+  /** 저장소: `checks/`의 최신 실행 — 머리줄 "마지막 검사 <커밋> · <시각>". 한 번도 안 돌렸으면 없음 ("마지막 검사 없음") (#62) */
+  lastCheck?: LastCheck;
   /** 머리줄: 미확인 n건 · 최장 n일 체류 */
   unconfirmed: number;
   longestPendingDays?: number;
@@ -155,15 +166,23 @@ export interface RuleDetailResponse {
   approval: ApprovalState;
   /** 현재 잠정 또는 대기 중인 제안 */
   proposal?: Proposal;
+  /** `proposal`의 해시 — 화면이 {@link ApproveRequest.proposalHash}로 돌려보낸다 (409 판정). 제안이 없으면 없음 (#41) */
+  proposalHash?: string;
   diff: RuleDiffLine[];
   /** 승인 이력 전체 (제안 → 승인/기각 → 재제안 …) */
   approvals: Approval[];
   /** `rule.decision`이 가리키는 기록. 파일이 없으면 `missing` — 승인은 막지 않는다 */
   decision?: DecisionRecord | { missing: DecisionId };
+  /** `rule.decision`이 가리키는 결정 기록 파일의 위치와 유무 (#41). `decision`의 파싱과 무관하게 채운다 */
+  decisionFile?: { id: DecisionId; path: string; exists: boolean };
   depends: DependencyStatus[];
   checks: CheckDetail[];
   status: RuleStatusDetail;
   statusAt?: { commit: string; checkedAt: string };
+  /** 실행: 최근 n회 상태 (`RuleStatusRecord.history`) — "이력 (최근 n회)". 검사 기록이 있을 때만 (#62) */
+  history?: RuleStatus[];
+  /** 실행: 이 상태가 된 시각 (`RuleStatusRecord.since`) — 체류 일수의 근거. 검사 기록이 있을 때만 (#62) */
+  since?: string;
   highRisk: boolean;
 }
 
@@ -177,13 +196,26 @@ export interface ApproveRequest {
   proposalHash: string;
 }
 
-/** 200. 상태(🟢 등)는 바뀌지 않는다 — 승인은 검사가 아니다 */
-export interface ApproveResponse {
-  approval: Approval;
-  approvalState: 'approved';
-  /** 상단 바 `⚠ n` 갱신용 */
-  unconfirmed: number;
-}
+/**
+ * 200. 상태(🟢 등)는 바뀌지 않는다 — 승인은 검사가 아니다.
+ * 고위험 영역의 완화 · 삭제 · 경계 변경(기획안 §9.1)은 **사전 승인**이 필요해 코어가 아무것도 쓰지 않는다 —
+ * 그때는 `requiresPriorApproval: true` 변형(기록 없음, 제안은 `pending` 그대로. 승인 통로는 M10) (#41)
+ */
+export type ApproveResponse =
+  | {
+      requiresPriorApproval: false;
+      approval: Approval;
+      approvalState: 'approved';
+      /** 상단 바 `⚠ n` 갱신용 */
+      unconfirmed: number;
+    }
+  | {
+      requiresPriorApproval: true;
+      approvalState: 'provisional';
+      /** 승인되지 않은 제안 그대로. 승인 전까지 `proposal.before`가 유효하다 */
+      proposal: Proposal;
+      unconfirmed: number;
+    };
 
 /** 사유 필수. 비어 있으면 400 `reason-required` (work-approve 6절 6번) */
 export interface RejectRequest extends ApproveRequest {
@@ -263,9 +295,33 @@ export interface RegenerateViewsRequest {
   names?: ViewName[];
 }
 
+/** `plumb views --json`의 결과 행 하나 (`views/generate.ts` `ViewGenerationResult`에서 `cause`를 뺀 것) */
+export type RegenerateViewResult =
+  | {
+      name: ViewName;
+      ok: true;
+      generatedAt: string;
+      commit?: string;
+      /** 머리말 `sources[]` 수 */
+      sources: number;
+      files: { json: string; md: string };
+    }
+  | { name: ViewName; ok: false; stage: 'generate' | 'render' | 'write'; error: string }
+  | { name: ViewName; skipped: 'not-implemented' };
+
+/**
+ * 200. 초안은 비동기(`started`만)였으나 UI 서버는 `plumb views`가 끝날 때까지 기다리므로(#71) 결과도 함께 돌려준다.
+ * `views` · `exitCode`가 없으면 비동기 구현 — 화면은 `started`만 보고 다시 읽는다
+ */
 export interface RegenerateViewsResponse {
   started: true;
   names: ViewName[];
+  /** 끝난 결과 행. 생성기 하나의 실패는 오류(500)가 아니라 여기 행으로 보인다 */
+  views?: RegenerateViewResult[];
+  /** `plumb views`의 exit code (실패 하나라도 있으면 1) */
+  exitCode?: number;
+  /** 생성 시점 HEAD. git이 없으면 없음 */
+  commit?: string;
 }
 
 export type RegenerateViewsError = Extract<ApiError, { status: 401 | 404 | 409 | 500 }>;
@@ -274,10 +330,11 @@ export type RegenerateViewsError = Extract<ApiError, { status: 401 | 404 | 409 |
 // POST /api/open — 코드 열람 점프 (README 2.2, work-views 4절)
 // ---------------------------------------------------------------------------
 
-/** 이유를 고르지 않으면 요청 자체가 성립하지 않는다 (`reason` 필수) */
+/** 이유를 고르지 않으면 요청 자체가 성립하지 않는다 (`reason` 필수). `view` · `item`은 View 밖(셸 `plumb open`)에서는 없다 (#71) */
 export interface CodeOpenRequest {
-  view: ViewName;
-  item: string;
+  view?: ViewName;
+  /** 없으면 기록에는 `file:line`이 들어간다 */
+  item?: string;
   file: string;
   line?: number;
   reason: CodeOpenReason;

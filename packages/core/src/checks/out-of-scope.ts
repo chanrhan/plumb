@@ -15,10 +15,11 @@
 import type { BlockGraph } from '../adapter/types.js';
 import type { BlockKind, OutOfScope, Quarantine, Rule, RuleStatusRecord } from '../types/index.js';
 
-/** 규칙이 붙지 않는 L1 블록 종류. 도메인 블록이 아닌 것 */
+/** 규칙이 붙지 않는 L1 블록 종류. 도메인 블록이 아닌 것 (공유 `lib`는 `shared` — 어댑터가 아직 `domain` + `shared: true`로 쓰므로 ID로도 제외) */
 export const NON_RULE_BLOCK_KINDS: ReadonlySet<BlockKind> = new Set<BlockKind>([
   'entry',
   'app',
+  'shared',
   'test',
   'unclassified',
 ]);

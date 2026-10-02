@@ -16,9 +16,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { Adapter, BlockGraph } from '../../adapter/index.js';
 import { loadConfig } from '../../config/index.js';
 import { openStore, type Store } from '../../store/index.js';
-import type { ArchitectureView, CheckRun, PlumbConfig, Rule } from '../../types/index.js';
+import type { ArchitectureView, BlockNode, CheckRun, PlumbConfig, Rule } from '../../types/index.js';
 import {
-  type ArchitectureBlockNode,
   architectureView,
   blockCycles,
   blockMatcher,
@@ -71,8 +70,8 @@ const RULES: Rule[] = [
   },
 ];
 
-/** 어댑터(`NextjsBlockNode`)처럼 `risk`를 단 블록 노드 — 블록 표의 고위험 열 */
-const PAYMENT_NODE: ArchitectureBlockNode = {
+/** 어댑터처럼 `risk`를 단 블록 노드 — 블록 표의 고위험 열 */
+const PAYMENT_NODE: BlockNode = {
   id: 'payment',
   level: 'L1',
   kind: 'domain',

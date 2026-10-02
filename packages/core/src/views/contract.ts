@@ -167,7 +167,7 @@ interface BlockInput {
 /** 어댑터 `Operation` → 소속 블록 · 핸들러 · 스키마↔모델 차이를 채운 `Operation` */
 export function resolveOperation(op: Operation, input: BlockInput): Operation {
   const routeFile = routeFileOf(op.path);
-  const fromTags = op.block.fromTags ?? (op as { tags?: string[] }).tags?.[0];
+  const fromTags = op.block.fromTags ?? op.tags?.[0];
   const handler = handlerBlocks(input.graph, routeFile, input.declared);
   const fromHandler = handler.blocks.length > 0 ? handler.blocks.join(',') : undefined;
   const block: Operation['block'] = {
@@ -565,7 +565,7 @@ function renderApi(view: ContractView): string[] {
         codeSpan(op.method),
         anchorLink(op.anchor, op.path),
         op.operationId === undefined ? '—' : codeSpan(op.operationId),
-        ((op as { tags?: string[] }).tags ?? (op.block.fromTags ? [op.block.fromTags] : [])).join(', ') || '—',
+        (op.tags ?? (op.block.fromTags ? [op.block.fromTags] : [])).join(', ') || '—',
         op.request?.name ?? (op.request ? '(인라인)' : '—'),
         responsesCell(op),
         blockCell(op),

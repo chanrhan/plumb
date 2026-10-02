@@ -1,4 +1,4 @@
-// 원본: docs/types/views.ts (#5). 이후 정본은 이 파일.
+// 원본: docs/types/views.ts (#5). 정본은 이 파일. #63에서 보완.
 /**
  * View 6개의 데이터 타입과 공통 머리말.
  *
@@ -20,6 +20,7 @@ import type {
   DecisionRecord,
   Grade,
   Quarantine,
+  Risk,
   RuleId,
   RuleKind,
   RuleStatus,
@@ -94,13 +95,17 @@ export interface LastCheck {
   finishedAt: string;
 }
 
+/** 블록 그래프를 못 얻어 "규칙 0개 블록" · "미분류 파일"을 셀 수 없다 — 0이라고 쓰지 않는다 (§12, view-verification 5절 "블록 그래프 없음") */
+export type NoGraph = { unavailable: 'no-graph' };
+
 /**
  * "검사 범위 밖" — 생략 불가 (view-verification 3.4, view-flow 6절 3번). 검증 View와 흐름도 View가 같은 타입을 쓴다.
  * 블록 필터와 무관하게 전체 값을 유지한다 (view-verification 4절).
+ * 파서: 블록 그래프에서 나오는 두 값(`blocksWithoutRules` · `unclassifiedFiles`)은 그래프가 없으면 {@link NoGraph} (#62 #68).
  */
 export interface OutOfScope {
-  /** 파서: 블록 그래프 − 저장소: 규칙 `block`. 규칙이 하나도 없는 L1 블록 */
-  blocksWithoutRules: string[];
+  /** 파서: 블록 그래프 − 저장소: 규칙 `block`. 규칙이 하나도 없는 L1 블록. 그래프가 없으면 측정 불가 */
+  blocksWithoutRules: string[] | NoGraph;
   /** 블록 안 파일 중 어느 규칙의 `scope`에도 안 맞는 것. 디렉토리로 접어 표시 */
   codeWithoutRules: Array<{ path: string; files: number; block?: string }>;
   /** 승인된 규칙 중 scope 매칭 0개 또는 검사 파일 없음 */
@@ -112,8 +117,8 @@ export interface OutOfScope {
   untestedFlows:
     | { mode: FlowMode; count: number; total: number; items: UncoveredFlow[] }
     | { unavailable: 'no-trace' | 'no-graph' };
-  /** 파서: 블록 그래프. 항상 표시 (기획안 §12) */
-  unclassifiedFiles: number;
+  /** 파서: 블록 그래프 `unclassified.length`. 항상 표시 (기획안 §12). 그래프가 없으면 측정 불가 */
+  unclassifiedFiles: number | NoGraph;
   /** 실행: `plumb check` `quarantined[]` (기획안 §7.5) */
   quarantined: Quarantine[];
 }
@@ -144,10 +149,23 @@ export type View =
 export type BlockLevel = 'L0' | 'L1';
 
 /**
- * 블록 종류. `entry` = `app/` Route Handler (view-architecture 6절 6번), `test` = `test/` (view-dependencies 6절 4번),
- * `unclassified` = 미분류 노드. L0 종류는 설정·인프라 파일에서 감지된 것만 — 추정으로 노드를 만들지 않는다
+ * 블록 종류. `app` = L0 앱 노드(대상 하나 = 노드 하나, id `system` — view-architecture 3절 "L0 노드 — 앱"),
+ * `entry` = `app/` Route Handler (view-architecture 6절 6번), `shared` = 공유 코드 `lib/`(모든 파일이 공개 진입점, 누구나 의존 가능 — #50),
+ * `test` = `test/` (view-dependencies 6절 4번), `unclassified` = 미분류 노드.
+ * L0 인프라 종류는 설정·인프라 파일에서 감지된 것만 — 추정으로 노드를 만들지 않는다.
+ * Next.js 어댑터는 `lib`를 아직 `kind: 'domain'` + `shared: true`로 쓴다 — `'shared'`로 바꾸는 것은 블록 그래프 JSON 값 변경이라 #63에서 보류.
  */
-export type BlockKind = 'app' | 'entry' | 'domain' | 'test' | 'db' | 'cache' | 'queue' | 'external-api' | 'unclassified';
+export type BlockKind =
+  | 'app'
+  | 'entry'
+  | 'domain'
+  | 'shared'
+  | 'test'
+  | 'db'
+  | 'cache'
+  | 'queue'
+  | 'external-api'
+  | 'unclassified';
 
 /** L0 인프라 종류. "큐: 감지된 설정 없음"의 큐가 이것 */
 export type InfraKind = 'db' | 'cache' | 'queue' | 'external-api';
@@ -172,24 +190,41 @@ export interface BlockNode {
   evidence?: Evidence[];
   /** L0 노드가 환경변수 이름으로 감지됐으면 그 이름 (값은 없다) */
   envVars?: string[];
+  /** 파서: `config.blocks`에 선언된 블록인가. 디렉토리 기본 규칙으로만 발견된 블록은 `false` (#50) */
+  declared?: boolean;
+  /** 파서: `config.blocks[id].risk` 그대로 — 상단 바 `⚠ n` · 블록 표 "고위험" 열의 재료 (#50) */
+  risk?: Risk;
+  /** 공유 코드 블록(`lib`). 모든 파일이 공개 진입점이고 누구나 의존해도 된다 (#50) */
+  shared?: boolean;
+  /** 저장소: `rules.yaml` 중 `block === id`인 규칙 수 — 아키텍처 View 블록 표의 "규칙 수" 열. 생성기가 채운다 (#65) */
+  rules?: number;
 }
 
 /** 경계를 넘는 import 문 하나 (view-architecture 6절 1번 `imports[]`) */
 export interface ImportSite {
   file: string;
+  /** import 문의 줄 번호. depcruise JSON에는 줄 번호가 없어 어댑터가 소스를 다시 읽는다 — 못 찾으면 `1` (#50. 선택화는 어댑터 출력 값 변경이라 보류) */
   line: number;
   specifier: string;
   /** 대상 블록의 공개 진입점을 거치는가 → 필수 검사 (1)의 원자료 */
   viaPublic: boolean;
 }
 
+/**
+ * 간선이 허용되는 근거 (#50). `config` = `blocks[from].dependsOn`에 `to`가 있다 · `entry` = `app → *`는 항상 허용
+ * (§4.4 "app은 공개 진입점만 import") · `shared` = `* → lib`는 항상 허용.
+ */
+export type BlockEdgeDeclaredBy = 'config' | 'entry' | 'shared';
+
 /** L1 간선. 파서: 블록 그래프 JSON. 라벨 숫자 = import 문 수 (모듈 수가 아니다) */
 export interface BlockEdge {
   from: string;
   to: string;
   count: number;
-  /** 파서: config `blocks.<from>.dependsOn`에 `to`가 있는가 (view-architecture 6절 2번 — 첫 슬라이스는 설정, 저장소 이관은 M10) */
+  /** 파서: 선언된 방향인가 — `dependsOn` 선언 또는 상시 허용(`app → *` · `* → lib`) (view-architecture 6절 2번 — 첫 슬라이스는 설정, 저장소 이관은 M10) */
   declared: boolean;
+  /** `declared: true`의 근거. `null`이면 미선언. 어댑터가 구분하지 않으면 없음 (#50) */
+  declaredBy?: BlockEdgeDeclaredBy | null;
   imports: ImportSite[];
 }
 
@@ -398,8 +433,8 @@ export interface ChangeEvent {
   blocks: string[];
   unclassified?: boolean;
   commit: string;
-  /** 커밋이 어느 실행 범위에 들어가는가. 사람이 직접 한 커밋이면 `manual` */
-  session: RunId | 'manual';
+  /** 커밋이 어느 실행 범위에 들어가는가. 사람이 직접 한 커밋이면 `manual`(현재 감지기) 또는 `null`(세션 정보 없음, #70) */
+  session: RunId | 'manual' | null;
   at: string;
   evidence: ChangeEvidence[];
   decisionIds: DecisionId[];
@@ -419,7 +454,8 @@ export interface ChangeEvent {
 export interface CommitGroup {
   commit: string;
   at: string;
-  session: RunId | 'manual';
+  /** `ChangeEvent.session`과 같다 */
+  session: RunId | 'manual' | null;
   events: ChangeEvent[];
 }
 
@@ -502,10 +538,10 @@ export interface VerificationView {
   /** 실행: plumb check 해시 체인 검증 (M3는 `ok` 고정) */
   store: { status: 'ok' | 'tampered' | 'unverified' };
   lastCheck?: LastCheck;
-  /** `plumb check` 실패 시 이전 성공 결과를 그릴 때 (view-verification 5절) */
-  staleResult?: { exitCode: number; stderrTail: string[]; previousCommit: string };
+  /** `plumb check` 실패 시 이전 성공 결과를 그릴 때 (view-verification 5절). `previousCommit`은 이전 기록이 하나도 없으면 `null` (#68) */
+  staleResult?: { exitCode: number; stderrTail: string[]; previousCommit: string | null };
   summary: {
-    /** 잠정(🟡🟠) 규칙 수 + 검토 대기열 미처리 수. 상단 바 `⚠ n`과 같은 값 */
+    /** 잠정 **제안**(`applied: 'provisional'`) 수 + 검토 대기열 미처리 수 — `store.status()` · 상단 바 `⚠ n`과 같은 값 (#68에서 주석 정정) */
     unconfirmed: number;
     longestPendingDays?: number;
     longestPendingRule?: RuleId;
@@ -635,6 +671,10 @@ export interface ModelField {
   anchor?: Anchor;
   /** 승인 해시 이후 추가됨 △ (git) */
   addedSinceApproval?: boolean;
+  /** DMMF `kind`. `object`면 관계 필드 (#66) */
+  kind?: 'scalar' | 'object' | 'enum' | 'unsupported';
+  /** DMMF `relationName` — 관계 필드일 때 (#66) */
+  relationName?: string;
 }
 
 /** Prisma 모델. `file:line`은 스키마 텍스트에서 `^model <이름> \{`를 찾아 붙인다 */
@@ -644,6 +684,8 @@ export interface Model {
   anchor: Anchor;
   /** 소유 블록. 파서로 알 수 없으므로 첫 슬라이스는 비움 (view-data-contract 6절 2번) */
   block?: string;
+  /** 모델의 문서 주석 (`/// …`) (#66) */
+  documentation?: string;
 }
 
 /** 관계. 파서: DMMF `fields[].kind == "object"` */
@@ -674,9 +716,13 @@ export interface Operation {
   method: string;
   path: string;
   operationId?: string;
+  /** OpenAPI `summary` (#66) */
+  summary?: string;
+  /** OpenAPI `tags` 전부. `block.fromTags`는 그중 첫째 (#66) */
+  tags?: string[];
   anchor: Anchor;
   request?: SchemaRef;
-  responses: Array<{ code: string; schema?: SchemaRef }>;
+  responses: Array<{ code: string; schema?: SchemaRef; description?: string }>;
   /** `tags[0]`과 핸들러 import 대상 블록. 둘이 다르면 🟠 (view-data-contract 6절 3번 — 둘 다 보인다) */
   block: { fromTags?: string; fromHandler?: string; mismatch: boolean };
   /** Route Handler 파일 + 공개 진입점 사용 여부 */

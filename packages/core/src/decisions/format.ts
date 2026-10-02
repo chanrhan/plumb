@@ -24,7 +24,7 @@
  * - front matter 키는 `id · title · block? · at · session · links`. `at`은 {@link DecisionRecord.date}, `session`은 없으면 `null`
  * - `links.events`는 도구가 역으로 채우는 값(docs/types/README view-changelog 2번)이라 비어 있으면 쓰지 않는다
  * - 본문의 네 절 제목은 고정 문자열({@link SECTION_HEADINGS}). 순서가 바뀌어도 읽히지만 {@link formatDecision}은 이 순서로 쓴다
- * - 모르는 `## 절`은 {@link DecisionDocument.extra}에 그대로 보존한다 (왕복 동일성). 절 제목이 하나도 없으면 {@link DecisionParseError}
+ * - 모르는 `## 절`은 {@link DecisionRecord.extra}에 그대로 보존한다 (왕복 동일성). 절 제목이 하나도 없으면 {@link DecisionParseError}
  * - 에이전트가 쓴 텍스트를 그대로 둔다 — 절 본문은 앞뒤 공백만 다듬는다 (`DecisionRecord` 주석 "요약하지 않는다")
  */
 
@@ -32,7 +32,7 @@ import { isMap, isSeq, parse as parseYaml, Document as YamlDocument } from 'yaml
 import { type ZodIssue, z } from 'zod';
 import { formatIssue } from '../config/load.js';
 import { StoreError } from '../store/index.js';
-import type { ChangeEventId, DecisionId, DecisionRecord, RuleId, RunId } from '../types/index.js';
+import type { ChangeEventId, DecisionExtraSection, DecisionId, DecisionRecord, RuleId, RunId } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
 // 절
@@ -58,17 +58,6 @@ export const SECTION_FIELDS: Readonly<Record<DecisionSection, 'decision' | 'reas
 };
 
 export const DECISION_SECTIONS: readonly DecisionSection[] = ['decision', 'reason', 'rejected', 'tradeoff'];
-
-/** 네 절 밖의 `## 절`. 파서는 버리지 않고 제목 · 본문을 그대로 둔다 */
-export interface DecisionExtraSection {
-  heading: string;
-  body: string;
-}
-
-/** 파일에서 읽은 결정 기록. `extra`는 모르는 절이 있을 때만 있다 */
-export interface DecisionDocument extends DecisionRecord {
-  extra?: DecisionExtraSection[];
-}
 
 // ---------------------------------------------------------------------------
 // 오류
@@ -198,10 +187,10 @@ const HEADING_TO_SECTION = new Map<string, DecisionSection>(
 );
 
 /**
- * Markdown 원문 → {@link DecisionDocument}. `where`는 오류 메시지의 위치(파일 경로 등).
+ * Markdown 원문 → {@link DecisionRecord}. `where`는 오류 메시지의 위치(파일 경로 등).
  * 형식이 아니면 {@link DecisionParseError}. 네 절 중 없는 것은 빈 문자열이다 — 빈 절 판정은 `validate.ts`
  */
-export function parseDecision(md: string, where = '입력'): DecisionDocument {
+export function parseDecision(md: string, where = '입력'): DecisionRecord {
   const { yaml, body } = splitFrontMatter(md, where);
 
   let raw: unknown;
@@ -236,7 +225,7 @@ export function parseDecision(md: string, where = '입력'): DecisionDocument {
     }
   }
 
-  const record: DecisionDocument = {
+  const record: DecisionRecord = {
     id: front.id,
     title: front.title,
     ...(front.block === undefined ? {} : { block: front.block }),
@@ -262,11 +251,11 @@ export function parseDecision(md: string, where = '입력'): DecisionDocument {
 // 쓰기
 // ---------------------------------------------------------------------------
 
-function frontMatterOf(record: DecisionDocument): string {
+function frontMatterOf(record: DecisionRecord): string {
   const links: Record<string, string[]> = {
     rules: record.links.rules,
     commits: record.links.commits,
-    ...(record.links.events.length > 0 ? { events: record.links.events } : {}),
+    ...((record.links.events ?? []).length > 0 ? { events: record.links.events } : {}),
     packages: record.links.packages ?? [],
     services: record.links.services ?? [],
   };
@@ -297,7 +286,7 @@ function sectionOf(heading: string, body: string): string {
  * {@link DecisionRecord} → Markdown 원문. 네 절을 고정 순서로, 그 뒤에 `extra` 절을 들어온 순서로 쓴다.
  * `parseDecision(formatDecision(r))`는 `r`과 같다 (빈 `packages` · `services`는 `[]`로, `session` 없음은 `null`로 정규화)
  */
-export function formatDecision(record: DecisionDocument): string {
+export function formatDecision(record: DecisionRecord): string {
   const sections = DECISION_SECTIONS.map((section) =>
     sectionOf(SECTION_HEADINGS[section], record[SECTION_FIELDS[section]]),
   );

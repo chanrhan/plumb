@@ -1,4 +1,4 @@
-// 원본: docs/types/rules.ts (#5). 이후 정본은 이 파일.
+// 원본: docs/types/rules.ts (#5). 정본은 이 파일. #63에서 보완.
 /**
  * 규칙 · 상태 · 승인 · 제안 · 결정 기록 · 검사 · 유효성 · 코드 열람 기록.
  *
@@ -233,6 +233,10 @@ export interface Proposal {
 export interface Approval {
   ruleId: RuleId;
   proposalId: ProposalId;
+  /**
+   * 행위. 코어는 `approve` · `reject` 줄만 쓴다 — 제안은 `proposals/`의 파일이고 승인 기록은 승인 행위로만 쓰인다 (§10).
+   * `propose`는 읽을 때만 허용한다 (#38)
+   */
   action: 'propose' | 'approve' | 'reject';
   at: string;
   /** 승인자. UI 토큰 세션이면 `ui`, CLI면 OS 사용자 이름 */
@@ -241,6 +245,13 @@ export interface Approval {
   reason?: string;
   /** 제안 내용의 해시. `POST /api/rules/:id/approve`의 409 판정 기준 (work-approve 4절) */
   proposalHash: string;
+  /**
+   * 승인 줄에만: 반영 후 `rules.yaml`의 sha256 — 변조 감지(`store.status()`)의 근거 (#38).
+   * 기각 줄에는 쓰지 않는다 — 변조된 파일의 해시를 기각이 "확인"해 주면 안 되기 때문
+   */
+  rulesHash?: string;
+  /** 승인 메모 한 줄 (선택, #38) */
+  note?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -249,17 +260,26 @@ export interface Approval {
 
 export type DecisionId = `D-${string}`;
 
+/** 결정 기록의 네 절 밖에 있는 `## 절`. 파서는 버리지 않고 제목 · 본문을 그대로 둔다 (왕복 동일성, #39) */
+export interface DecisionExtraSection {
+  heading: string;
+  body: string;
+}
+
 /**
- * 결정 기록 D-xxxx. 저장소: `decisions/D-xxxx.md`를 M3 파서가 다섯 필드로 나눈 것.
+ * 결정 기록 D-xxxx. 저장소: `decisions/D-xxxx.md`를 M3 파서(`decisions/format.ts`)가 다섯 필드로 나눈 것.
  * 3등급(기록). 규범도 검사 대상도 아니다. 에이전트가 쓴 텍스트를 그대로 둔다 — 요약하지 않는다.
+ *
+ * 파일과 이름이 다른 필드 둘은 그대로 둔다 (#39, #63에서 보류): front matter `at` ↔ `date`, 절 `## 감수하는 것`(키 `tradeoff`) ↔ `accepted`.
+ * 바꾸면 View JSON(`ChangelogView.orphanDecisions`)의 키가 바뀌므로 저장 형식 결정이 필요하다.
  */
 export interface DecisionRecord {
   id: DecisionId;
   title: string;
   block?: string;
-  /** 날짜 (ISO 8601) */
+  /** 날짜 (ISO 8601). 파일의 front matter 키는 `at` */
   date: string;
-  /** 남긴 세션(실행) ID. 사람이 직접 썼으면 없음 */
+  /** 남긴 세션(실행) ID. 사람이 직접 썼으면 없음 (파일에는 `session: null`) */
   session?: RunId;
   /** 결정 */
   decision: string;
@@ -267,7 +287,7 @@ export interface DecisionRecord {
   reason: string;
   /** 기각한 대안. 비어 있어도 "사유 없음"은 아니고 "기록 불완전" (view-changelog 6절 3번) */
   rejected: string;
-  /** 감수한 것 */
+  /** 감수한 것. 파일의 절 제목은 `## 감수하는 것` */
   accepted: string;
   /**
    * 연결. 에이전트가 쓰는 것은 규칙 ID · 커밋 · 패키지 · 서비스. 이벤트 ID는 감지 뒤에만 존재하므로
@@ -276,11 +296,13 @@ export interface DecisionRecord {
   links: {
     rules: RuleId[];
     commits: string[];
-    /** 도구가 채움 */
-    events: ChangeEventId[];
+    /** 도구가 채움. 에이전트는 쓰지 않으므로 선택 — 파서는 없으면 `[]`로 읽고, 쓸 때 비어 있으면 생략한다 (#39) */
+    events?: ChangeEventId[];
     packages?: string[];
     services?: string[];
   };
+  /** 네 절 밖의 `## 절`. 모르는 절이 있을 때만 (#39) */
+  extra?: DecisionExtraSection[];
 }
 
 /** 설계 변경 이벤트 ID. 감지기가 부여, 근거 해시로 멱등 (view-changelog 3절). 본체는 views.ts `ChangeEvent` */
@@ -320,7 +342,11 @@ export interface CheckRun {
   commit: string;
   startedAt: string;
   finishedAt: string;
-  /** 러너 자체가 죽었으면 exit code와 stderr 꼬리 (view-verification 5절 "plumb check 실패") */
+  /**
+   * 러너 자체가 죽었으면 exit code와 stderr 꼬리 (view-verification 5절 "plumb check 실패").
+   * `exitCode` 관례: `-1` = 프로세스가 돌지 않았다(어댑터 예외 · 시그널로 종료) · `127` = 러너 바이너리 없음 (#49 #62).
+   * `number | null`로 바꾸는 것은 저장 형식 결정이라 #63에서 보류
+   */
   runner: { exitCode: number; stderrTail?: string[] };
   results: CheckResult[];
   quarantined: Quarantine[];
@@ -404,6 +430,8 @@ export interface ContractApproval {
   approvedAt: string;
   decision?: DecisionId;
   commit: string;
+  /** 승인자. UI 토큰 세션이면 `ui`, CLI면 OS 사용자 이름 — `Approval.by`와 같은 규약 (#66) */
+  by: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -419,8 +447,9 @@ export type CodeOpenReason = 'view-error' | 'missing-info' | 'debugging-env';
  */
 export interface CodeOpenRecord {
   at: string;
-  view: ViewName;
-  /** 어느 항목에서 눌렀는가 (항목 식별자 또는 라벨) */
+  /** 어느 View에서 눌렀는가. `plumb open <file>:<line>`을 View 밖(셸)에서 부르면 없음 (#71) */
+  view?: ViewName;
+  /** 어느 항목에서 눌렀는가 (항목 식별자 또는 라벨). 요청에 없으면 저장소가 `file:line`을 넣는다 */
   item: string;
   file: string;
   line?: number;

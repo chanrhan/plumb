@@ -10,11 +10,11 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isEnoent, listFiles, writeFileAtomic } from '../store/fs.js';
 import type { StorePaths } from '../store/index.js';
-import type { DecisionId, RuleId } from '../types/index.js';
-import { DECISION_ID_PATTERN, type DecisionDocument, formatDecision, parseDecision } from './format.js';
+import type { DecisionId, DecisionRecord, RuleId } from '../types/index.js';
+import { DECISION_ID_PATTERN, formatDecision, parseDecision } from './format.js';
 
 /** `writeDecision` 입력. `id`가 없으면 다음 번호를 받는다 */
-export type DecisionInput = Omit<DecisionDocument, 'id'> & { id?: DecisionId };
+export type DecisionInput = Omit<DecisionRecord, 'id'> & { id?: DecisionId };
 
 /** 번호 자릿수. `D-0001`. 넘치면 자릿수가 늘어난다 (`D-10000`) */
 export const DECISION_ID_WIDTH = 4;
@@ -43,7 +43,7 @@ export async function nextDecisionId(paths: StorePaths): Promise<DecisionId> {
   return decisionIdOf(last + 1);
 }
 
-async function readDecisionFile(path: string): Promise<DecisionDocument | undefined> {
+async function readDecisionFile(path: string): Promise<DecisionRecord | undefined> {
   let text: string;
   try {
     text = await readFile(path, 'utf8');
@@ -55,8 +55,8 @@ async function readDecisionFile(path: string): Promise<DecisionDocument | undefi
 }
 
 /** 전체 결정 기록. 번호 오름차순. 한 파일이라도 형식이 아니면 {@link DecisionParseError} */
-export async function listDecisions(paths: StorePaths): Promise<DecisionDocument[]> {
-  const records: DecisionDocument[] = [];
+export async function listDecisions(paths: StorePaths): Promise<DecisionRecord[]> {
+  const records: DecisionRecord[] = [];
   for (const id of await listDecisionIds(paths)) {
     const record = await readDecisionFile(join(paths.decisionsDir, `${id}.md`));
     if (record !== undefined) records.push(record);
@@ -65,7 +65,7 @@ export async function listDecisions(paths: StorePaths): Promise<DecisionDocument
 }
 
 /** 없으면 `undefined`. 파일이 있는데 형식이 아니면 {@link DecisionParseError} */
-export async function getDecision(paths: StorePaths, id: DecisionId): Promise<DecisionDocument | undefined> {
+export async function getDecision(paths: StorePaths, id: DecisionId): Promise<DecisionRecord | undefined> {
   return readDecisionFile(paths.decision(id));
 }
 
@@ -74,7 +74,7 @@ export async function getDecision(paths: StorePaths, id: DecisionId): Promise<De
  * 쓰기 전에 직렬화한 원문을 다시 파싱해 디스크의 파일이 반드시 읽히는 것을 보장한다 — 입력이 스키마에 어긋나면
  * {@link DecisionParseError}이고 파일은 쓰지 않는다. 돌려주는 값은 그 파싱 결과(정규화된 기록)
  */
-export async function writeDecision(paths: StorePaths, input: DecisionInput): Promise<DecisionDocument> {
+export async function writeDecision(paths: StorePaths, input: DecisionInput): Promise<DecisionRecord> {
   const id = input.id ?? (await nextDecisionId(paths));
   const text = formatDecision({ ...input, id });
   const record = parseDecision(text, `결정 ${id}`);
@@ -83,6 +83,6 @@ export async function writeDecision(paths: StorePaths, input: DecisionInput): Pr
 }
 
 /** `links.rules`에 규칙 ID가 들어 있는 결정 기록. 번호 오름차순 */
-export async function decisionsForRule(paths: StorePaths, ruleId: RuleId): Promise<DecisionDocument[]> {
+export async function decisionsForRule(paths: StorePaths, ruleId: RuleId): Promise<DecisionRecord[]> {
   return (await listDecisions(paths)).filter((record) => record.links.rules.includes(ruleId));
 }

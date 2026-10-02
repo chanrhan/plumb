@@ -8,7 +8,7 @@
  *   (1) `config.blocks[<id>].include` 글롭에 맞으면 그 블록
  *   (2) `src/domains/<d>/**` → 블록 `<d>` (설정에 없어도 — `declared: false`)
  *   (3) `src/app/**` → `app` (`kind: 'entry'`, view-architecture 6절 6번)
- *   (4) `src/lib/**` → `lib` (공유 코드. `BlockKind`에 'shared'가 없어 `kind: 'domain'` + `shared: true`)
+ *   (4) `src/lib/**` → `lib` (공유 코드. `kind: 'domain'` + `shared: true` — `BlockKind 'shared'`로 바꾸는 것은 그래프 JSON 값 변경이라 #63에서 보류)
  *   (5) 그 외 → **미분류** (`unclassified[]`. `config.ignore` 글롭은 제외)
  * `node_modules` · 외부 패키지는 파일이 아니라 `externals: { [pkg]: fromBlocks[] }`로 따로 센다 (의존성 View 재료).
  *
@@ -24,7 +24,9 @@ import type {
   AdapterContext,
   BlockConfig,
   BlockEdge,
+  BlockEdgeDeclaredBy,
   BlockGraph,
+  BlockKind,
   BlockNode,
   Evidence,
   ImportSite,
@@ -36,40 +38,8 @@ import type {
 } from '@plumb/core';
 import picomatch from 'picomatch';
 
-// ---------------------------------------------------------------------------
-// 타입 — 코어 `BlockGraph`의 상위집합. 더한 필드는 PR의 "타입 보완 후보"
-// ---------------------------------------------------------------------------
-
-/**
- * 간선이 허용되는 근거. `config` = `blocks[from].dependsOn`에 `to`가 있다 · `entry` = `app → *`는 항상 허용 (§4.4 "app은 공개
- * 진입점만 import") · `shared` = `* → lib`는 항상 허용. `null`이면 미선언 (`declared: false`).
- */
-export type DeclaredBy = 'config' | 'entry' | 'shared';
-
-/** L1 블록 노드 + 이 어댑터가 더한 필드 */
-export interface NextjsBlockNode extends BlockNode {
-  /** `config.blocks`에 선언된 블록인가. 디렉토리 기본 규칙으로만 발견된 블록(`src/domains/<d>` · `app` · `lib`)은 `false` */
-  declared: boolean;
-  /** `config.blocks[id].risk` 그대로 */
-  risk?: Risk;
-  /** 공유 코드 블록(`lib`). 모든 파일이 공개 진입점이고 누구나 의존해도 된다 */
-  shared?: boolean;
-}
-
-/** L1 간선 + 허용 근거 */
-export interface NextjsBlockEdge extends BlockEdge {
-  declaredBy: DeclaredBy | null;
-}
-
-/** 이 어댑터의 블록 그래프. 코어 `BlockGraph`에 대입 가능하다 */
-export interface NextjsBlockGraph extends BlockGraph {
-  blocks: NextjsBlockNode[];
-  edges: NextjsBlockEdge[];
-  /** 외부 패키지 → 그것을 import하는 블록 ID. 미분류 파일의 import는 `'unclassified'` */
-  externals: Record<string, string[]>;
-  /** `reports/depcruise.json`을 재사용했으면 그 경로 (루트 기준). 직접 실행했으면 없음 */
-  reusedReport?: string;
-}
+// 결과는 공유 타입 `BlockGraph` 그대로 — 이 어댑터가 더 넣는 `declared` · `risk` · `shared` · `declaredBy` · `externals` · `reusedReport`는
+// #63에서 코어 타입에 들어갔다 (`BlockNode` · `BlockEdge` · `BlockGraph`의 선택 필드).
 
 // ---------------------------------------------------------------------------
 // dependency-cruiser JSON — 쓰는 필드만
@@ -156,7 +126,7 @@ const PRISMA_PROVIDER_LABELS: Record<string, string> = {
 
 interface BlockSeed {
   id: string;
-  kind: NextjsBlockNode['kind'];
+  kind: BlockKind;
   paths: string[];
   /** 명시 공개 진입점. `shared`면 모든 파일이 공개 */
   public: string[];
@@ -207,7 +177,7 @@ function seedFromConfig(id: string, cfg: BlockConfig): BlockSeed {
   };
 }
 
-function seedDefault(id: string, kind: NextjsBlockNode['kind'], dir: string, shared = false): BlockSeed {
+function seedDefault(id: string, kind: BlockKind, dir: string, shared = false): BlockSeed {
   const glob = `${dir}/**`;
   return {
     id,
@@ -303,8 +273,8 @@ export interface FoldInput {
 }
 
 export interface FoldResult {
-  blocks: NextjsBlockNode[];
-  edges: NextjsBlockEdge[];
+  blocks: BlockNode[];
+  edges: BlockEdge[];
   unclassified: string[];
   externals: Record<string, string[]>;
   /** (블록, 패키지) 쌍 — L0 간선의 원료 */
@@ -317,7 +287,7 @@ export function foldModules({ config, depcruise, lineOf }: FoldInput): FoldResul
   const unclassified = new Set<string>();
   const externals = new Map<string, Set<string>>();
   const packageImports = new Map<string, { block: string; pkg: string }>();
-  const edges = new Map<string, NextjsBlockEdge>();
+  const edges = new Map<string, BlockEdge>();
 
   // 1) 파일 → 블록 (파일 수 · 미분류)
   const assignment = new Map<string, string | null>();
@@ -368,9 +338,9 @@ export function foldModules({ config, depcruise, lineOf }: FoldInput): FoldResul
     }
   }
 
-  const blocks: NextjsBlockNode[] = [...classifier.seeds.values()].map((seed) => {
+  const blocks: BlockNode[] = [...classifier.seeds.values()].map((seed) => {
     const files = [...new Set(seed.files)].sort();
-    const node: NextjsBlockNode = {
+    const node: BlockNode = {
       id: seed.id,
       level: 'L1',
       kind: seed.kind,
@@ -405,7 +375,7 @@ export function foldModules({ config, depcruise, lineOf }: FoldInput): FoldResul
   };
 }
 
-function declaredByOf(classifier: BlockClassifier, from: string, to: string): DeclaredBy | null {
+function declaredByOf(classifier: BlockClassifier, from: string, to: string): BlockEdgeDeclaredBy | null {
   const fromSeed = classifier.seeds.get(from);
   const toSeed = classifier.seeds.get(to);
   if (fromSeed?.dependsOn.includes(to)) return 'config';
@@ -426,7 +396,7 @@ export interface L0Input {
 }
 
 export interface L0Result {
-  nodes: NextjsBlockNode[];
+  nodes: BlockNode[];
   undetectedInfra: InfraKind[];
 }
 
@@ -435,7 +405,7 @@ function evidenceAt(file: string, line: number, excerpt: string): Evidence {
 }
 
 /** `datasource db { provider = "postgresql" url = env("DATABASE_URL") }` → L0 `db` 노드 */
-function detectPrisma(prisma: { path: string; text: string }): NextjsBlockNode | null {
+function detectPrisma(prisma: { path: string; text: string }): BlockNode | null {
   const lines = prisma.text.split(/\r?\n/);
   let inDatasource = false;
   let depth = 0;
@@ -458,7 +428,7 @@ function detectPrisma(prisma: { path: string; text: string }): NextjsBlockNode |
     if (depth <= 0) break;
   }
   if (!provider) return null;
-  const node: NextjsBlockNode = {
+  const node: BlockNode = {
     id: 'db',
     level: 'L0',
     kind: 'db',
@@ -527,7 +497,7 @@ export function parseComposeServices(text: string): ComposeService[] {
 
 /** L0 노드 집합. DB는 Prisma와 compose 근거를 하나로 합친다 (view-architecture 3절 "두 근거가 모두 있으면 하나로") */
 export function detectL0(input: L0Input): L0Result {
-  const nodes: NextjsBlockNode[] = [];
+  const nodes: BlockNode[] = [];
   const db = input.prisma ? detectPrisma(input.prisma) : null;
   if (db) nodes.push(db);
 
@@ -577,7 +547,7 @@ export function detectL0(input: L0Input): L0Result {
 /** (블록, 클라이언트 패키지) → L0 간선. 대상 종류의 노드가 감지되지 않았으면 간선도 만들지 않는다 (추정 금지) */
 export function infraEdgesOf(
   packageImports: Array<{ block: string; pkg: string }>,
-  l0: NextjsBlockNode[],
+  l0: BlockNode[],
   config: PlumbConfig,
 ): InfraEdge[] {
   const table: Record<string, InfraKind> = { ...CLIENT_PACKAGES };
@@ -746,10 +716,7 @@ function makeLineFinder(root: string): (file: string, specifier: string) => numb
  * 의존성 추출 → 블록 그래프. `ctx.root` 밖은 읽지 않는다.
  * 실패(도구 없음 · 출력이 JSON이 아님)는 예외 — "이전 성공 결과를 대신 돌려주지" 않는다 (`ArchitectureView.extractionError`는 코어가).
  */
-export async function extractDependencies(
-  ctx: AdapterContext,
-  options: ExtractOptions = {},
-): Promise<NextjsBlockGraph> {
+export async function extractDependencies(ctx: AdapterContext, options: ExtractOptions = {}): Promise<BlockGraph> {
   const { root, config } = ctx;
   const srcDir = options.srcDir ?? DEFAULTS.srcDir;
   const configFile = options.configFile ?? DEFAULTS.configFile;
@@ -777,7 +744,7 @@ export async function extractDependencies(
   const tool: ToolInfo = { name: TOOL_NAME, version: depcruiseVersion(root) };
   const commit = await gitHead(root);
 
-  const graph: NextjsBlockGraph = {
+  const graph: BlockGraph = {
     generatedAt: now().toISOString(),
     ...(commit ? { commit } : {}),
     tool,

@@ -1,7 +1,7 @@
-// 원본: docs/types/index.ts (#5). 이후 정본은 이 파일.
+// 원본: docs/types/index.ts (#5). 정본은 이 파일. #63에서 보완.
 /**
- * M0 타입 초안 (이슈 #5). M1 #6에서 `packages/core/src/types/`로 이식된다.
- * 결정 메모는 `docs/types/README.md`.
+ * 공유 타입 (이슈 #5 초안 → M1 #6 이식 → M3~M8 구현 PR들이 적어 둔 보완 항목을 #63에서 반영).
+ * 결정 메모는 `docs/types/README.md`. 어댑터 인터페이스와 그 반환 타입은 `adapter/types.ts`.
  */
 
 export * from './views.js';

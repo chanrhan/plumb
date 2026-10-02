@@ -13,8 +13,11 @@
 
 import { access, mkdir, readFile, rm } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import type { AdapterContext, CapturedOutput, CheckResult, ToolInfo } from '@plumb/core';
+import type { AdapterContext, CheckResult, StaticCheckRun } from '@plumb/core';
 import { capture, readToolInfo } from './capture.js';
+
+/** 결과 타입은 코어 `adapter/types.ts`의 것 (#63) */
+export type { StaticCheckRun };
 
 /** `CheckRef.ref` 접두어. `rules.yaml` `checks[].ref`와 #46의 common.ts가 같은 문자열을 쓴다 */
 export const DEPCRUISE_REF_PREFIX = 'depcruise:';
@@ -41,15 +44,6 @@ export interface DepcruiseJson {
       allowed?: unknown[];
     };
   };
-}
-
-export interface StaticCheckRun {
-  /** 규칙 하나당 하나. 규칙 집합 선언 순서 (`ruleSetUsed.forbidden[]` → `required[]` → `allowed`) */
-  results: CheckResult[];
-  output: CapturedOutput;
-  /** `<root>/reports/depcruise.json`. 안 생겼으면 `null` */
-  graphJsonPath: string | null;
-  tool: ToolInfo;
 }
 
 export function resolveGraphJsonPath(ctx: AdapterContext): string {

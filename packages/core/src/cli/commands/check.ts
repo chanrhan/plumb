@@ -239,8 +239,8 @@ function outOfScopeLines(result: RunCheckResult): string[] {
   const unavailable = result.graphUnavailable;
   const row = (label: string, value: string) => `  ${padColumn(`${label}:`, LABEL_WIDTH)} ${value}`;
   const blocks =
-    unavailable !== null
-      ? `측정 불가 (블록 그래프 없음 — ${unavailable.reason})`
+    unavailable !== null || 'unavailable' in out.blocksWithoutRules
+      ? `측정 불가 (블록 그래프 없음${unavailable === null ? '' : ` — ${unavailable.reason}`})`
       : out.blocksWithoutRules.length === 0
         ? '없음'
         : out.blocksWithoutRules.join(', ');
@@ -260,7 +260,8 @@ function outOfScopeLines(result: RunCheckResult): string[] {
         ? '측정 불가 (트레이스 없음)'
         : '측정 불가 (정적 그래프 없음)'
       : `${out.untestedFlows.count}개 / 진입점 ${out.untestedFlows.total} (${out.untestedFlows.mode})`;
-  const unclassified = unavailable !== null ? '측정 불가 (블록 그래프 없음)' : `${out.unclassifiedFiles}개`;
+  const unclassified =
+    typeof out.unclassifiedFiles === 'number' ? `${out.unclassifiedFiles}개` : '측정 불가 (블록 그래프 없음)';
   const quarantined =
     out.quarantined.length === 0
       ? '0'

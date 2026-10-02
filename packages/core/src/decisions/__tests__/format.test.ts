@@ -1,12 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import {
-  type DecisionDocument,
-  DecisionParseError,
-  formatDecision,
-  parseDecision,
-  validateDecision,
-} from '../index.js';
+import type { DecisionRecord } from '../../types/index.js';
+import { DecisionParseError, formatDecision, parseDecision, validateDecision } from '../index.js';
 import { EXAMPLE_DECISION_PATH, REDIS_DECISION } from './fixtures.js';
 
 /** YAML 주석(`# …`) 줄을 뺀 원문. 주석은 값이 아니므로 왕복에서 사라진다 */
@@ -89,7 +84,7 @@ describe('formatDecision · parseDecision', () => {
   });
 
   it('events가 있으면 쓰고 읽는다 (도구가 역으로 채운 값)', () => {
-    const record: DecisionDocument = { ...REDIS_DECISION, links: { ...REDIS_DECISION.links, events: ['E-0007'] } };
+    const record: DecisionRecord = { ...REDIS_DECISION, links: { ...REDIS_DECISION.links, events: ['E-0007'] } };
     const text = formatDecision(record);
     expect(text).toContain('  events: [ E-0007 ]');
     expect(parseDecision(text)).toEqual(record);

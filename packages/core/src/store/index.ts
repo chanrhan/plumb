@@ -6,7 +6,9 @@
  */
 
 import type {
+  Approval,
   CheckRun,
+  CodeOpenRecord,
   ContractApproval,
   PlumbConfig,
   Proposal,
@@ -18,7 +20,6 @@ import type {
   ViewName,
 } from '../types/index.js';
 import {
-  type ApprovalRecord,
   type ApproveInput,
   type ApproveResult,
   approve,
@@ -34,7 +35,6 @@ import {
   type CodeOpenSummary,
   countCodeOpens,
   listCodeOpens,
-  type StoredCodeOpen,
   summarizeCodeOpens,
 } from './code-opens.js';
 import { type ApproveContractInput, approveContract, getContractApproval, listContractApprovals } from './contracts.js';
@@ -117,7 +117,7 @@ export interface Store {
     /** `rules.yaml`을 바꾸는 유일한 길 */
     approve(input: ApproveInput): Promise<ApproveResult>;
     reject(input: RejectInput): Promise<RejectResult>;
-    history(ruleId: RuleId): Promise<ApprovalRecord[]>;
+    history(ruleId: RuleId): Promise<Approval[]>;
   };
   /** 검사 실행 기록 `checks/<c-id>.json` — 실행: `plumb check`가 쓴다. 상태 계산의 입력이자 진실 */
   checks: {
@@ -161,8 +161,8 @@ export interface Store {
    */
   codeOpens: {
     /** 이유 없으면 `ValidationError`. `at`은 저장소 시계 */
-    append(input: CodeOpenInput): Promise<StoredCodeOpen>;
-    list(): Promise<StoredCodeOpen[]>;
+    append(input: CodeOpenInput): Promise<CodeOpenRecord>;
+    list(): Promise<CodeOpenRecord[]>;
     /** 이유별 · 결과별 수 */
     summary(): Promise<CodeOpenSummary>;
     /** 이 View의 열람 수. `since`(보통 머리말 `generatedAt`) 이후만 */

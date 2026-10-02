@@ -1,4 +1,4 @@
-// 원본: docs/types/run.ts (#5). 이후 정본은 이 파일.
+// 원본: docs/types/run.ts (#5). 정본은 이 파일. #63에서 보완.
 /**
  * 파이프라인 실행 상태 — `runs/<id>.json`.
  *
@@ -118,9 +118,13 @@ export interface CapturedOutput {
   command: string;
   startedAt: string;
   finishedAt: string;
+  /** 프로세스 exit code. 시그널로 죽었으면 `-1` + `tail` 끝에 `[plumb] 시그널로 종료: …` 한 줄, 바이너리가 없으면 `127` (#49) */
   exitCode: number;
   tail: string[];
-  /** 전체 로그 `runs/<id>/output.log` (명령별 구분자 포함). 전체 보기는 M10 */
+  /**
+   * 전체 로그 파일의 절대 경로. 어댑터가 직접 돌린 명령은 `<work>/logs/<시각>-<bin>.log`(#44),
+   * 파이프라인 실행은 `runs/<id>/output.log`(명령별 구분자 포함, M6). 전체 보기는 M10
+   */
   logPath: string;
 }
 

@@ -28,9 +28,9 @@ import { mkdtemp, rm, symlink, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import type { ApiSchema, BlockGraph, DbSchema, EventSchema, SchemaFile, SchemaSet } from '../adapter/types.js';
-import type { ApprovalRecord } from '../store/approvals.js';
 import type {
   Anchor,
+  Approval,
   BlockNode,
   ChangeEvent,
   ChangeEventId,
@@ -71,7 +71,7 @@ export interface CommitInfo {
 
 /** 저장소: 규칙 변경 이력 (`rule` 감지기의 입력). 읽기만 한다 */
 export interface RulesHistory {
-  approvals: ApprovalRecord[];
+  approvals: Approval[];
   proposals: Proposal[];
   rules: Rule[];
 }

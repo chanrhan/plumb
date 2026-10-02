@@ -9,9 +9,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { NotImplementedError } from '../../adapter/errors.js';
 import type { LoadedAdapter } from '../../adapter/load.js';
-import type { Adapter, BlockGraph, TestRunResult } from '../../adapter/types.js';
+import type { Adapter, BlockGraph, StaticCheckRun, TestRunResult } from '../../adapter/types.js';
 import { graph as graphFixture } from '../../checks/__tests__/fixtures.js';
-import type { StaticCheckRun } from '../../checks/run-check.js';
 import type { CapturedOutput, CheckResult, Proposal, Rule } from '../../types/index.js';
 import {
   COMMON_SECTION_HEADER,

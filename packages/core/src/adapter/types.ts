@@ -13,15 +13,19 @@
  *
  * 반환 타입 가운데 `packages/core/src/types/views.ts`에 이미 있는 것(`BlockNode` `BlockEdge` `InfraEdge` `Model` `Operation` …)은
  * 그대로 쓴다. 거기 없는 것({@link BlockGraph} {@link StubResult} {@link TestRunResult} {@link SchemaSet} {@link TraceResult})은
- * 여기 둔다 — 공유 타입 이식은 별도 이슈 (#8 "범위 밖").
+ * 여기 둔다. 인터페이스 밖이던 두 능력 — 정적 검사({@link StaticCheckRun}, #44 · #47)와 정적 호출 그래프({@link StaticCallGraph}, #59) —
+ * 의 타입도 #63에서 여기로 모았다. `buildCallGraph`는 선택 메서드, `runStaticChecks`는 어댑터 패키지의 모듈 export(`adapter/load.ts`).
  */
 
 import type { PlumbConfig } from '../types/config.js';
+import type { CheckResult } from '../types/rules.js';
 import type { CapturedOutput } from '../types/run.js';
 import type {
+  Anchor,
   BlockEdge,
   BlockNode,
   EnumDef,
+  FlowNode,
   InfraEdge,
   InfraKind,
   Model,
@@ -48,7 +52,10 @@ export interface AdapterContext {
   config: PlumbConfig;
 }
 
-/** 공통 형식을 만든 도구와 버전. View 머리말 `SourceRef.tool/version`의 원자료 */
+/**
+ * 공통 형식을 만든 도구와 버전. View 머리말 `SourceRef.tool/version`의 원자료.
+ * 도구가 대상에 설치되어 있지 않으면 `version: 'unknown'` (#49. `string | null`은 머리말 문구 변경이라 #63에서 보류)
+ */
 export interface ToolInfo {
   name: string;
   version: string;
@@ -81,6 +88,10 @@ export interface BlockGraph {
   undetectedInfra: InfraKind[];
   /** 어느 블록 글롭에도 안 맞는 파일. 항상 돌려준다, 0개여도 (기획안 §12 "미분류 파일 수 항상 표시") */
   unclassified: string[];
+  /** 외부 패키지 → 그것을 import하는 블록 ID (미분류 파일의 import는 `'unclassified'`). 의존성 View `importedBy`의 재료 (#50) */
+  externals?: Record<string, string[]>;
+  /** 정적 검사가 남긴 dependency-cruiser JSON을 재사용했으면 그 경로(루트 기준). 직접 실행했으면 없음 (#50) */
+  reusedReport?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -155,6 +166,8 @@ export interface DbSchema {
 /** OpenAPI에서 추려낸 엔드포인트 (`ContractView.api`와 같은 모양). `Operation.block`은 코어가 블록 그래프와 맞춰 채운다 */
 export interface ApiSchema {
   operations: Operation[];
+  /** `components.schemas` 전부 (이름 · 필드 요약). 요청·응답이 참조하지 않는 스키마도 포함 (#66) */
+  schemas?: SchemaRef[];
 }
 
 /** AsyncAPI에서 추려낸 채널·메시지 (`ContractView.events`와 같은 모양) */
@@ -176,12 +189,18 @@ export interface SchemaSet {
 // 5. 트레이스 수집 → OpenTelemetry 스팬 (기획안 §4.2, view-flow 6절 1번 A안)
 // ---------------------------------------------------------------------------
 
-/** 트레이스 수집 옵션. 수집은 테스트 실행과 함께 일어나므로 보통 `runTests` 뒤에 부른다 */
+/** 트레이스 수집 옵션. 수집은 테스트 실행과 함께 일어난다 — 어댑터가 `runTests`를 안에서 부르거나(`run !== false`) 남은 파일만 읽는다 */
 export interface TraceCollectOptions {
   /** 트레이스 파일(OTLP JSON) 디렉토리. 없으면 어댑터 기본값 */
   traceDir?: string;
   /** 이 테스트들의 스팬만. JUnit `classname` + `name` (FlowScenario.testId) */
   testIds?: Array<{ classname: string; name: string }>;
+  /** 함께 돌릴 테스트 파일 글롭 (`TestRunOptions.scope`) (#69) */
+  scope?: string[];
+  /** 러너 타임아웃 (ms) (#69) */
+  timeoutMs?: number;
+  /** `false`면 테스트를 다시 돌리지 않고 디렉토리의 파일만 읽는다. 기본 `true` (#69) */
+  run?: boolean;
 }
 
 /**
@@ -207,8 +226,50 @@ export interface TraceSpan {
  * `FlowView.fallback`에 적는다 (view-flow 5절 "조용히 A안인 척하지 않는다").
  */
 export type TraceResult =
-  | { spans: TraceSpan[]; files: string[]; tool: ToolInfo }
-  | { unavailable: 'no-trace'; reason?: string };
+  | {
+      spans: TraceSpan[];
+      files: string[];
+      tool: ToolInfo;
+      /** 같은 실행의 테스트 결과 — 어댑터가 `runTests`를 안에서 돌렸을 때 (#69) */
+      run?: TestRunResult;
+    }
+  | { unavailable: 'no-trace'; reason?: string; run?: TestRunResult };
+
+// ---------------------------------------------------------------------------
+// 6. 정적 검사 → `CheckResult[]` (이슈 #44 · #47, 기획안 §7.2 1등급)
+// ---------------------------------------------------------------------------
+
+/**
+ * 정적 검사(dependency-cruiser) 실행 결과. 규칙 하나당 `CheckResult` 하나 (`check.kind: 'static'`, `ref: 'depcruise:<규칙>'`).
+ * JSON이 안 생기면 `results: []` · `graphJsonPath: null` — 추정으로 pass · fail을 만들지 않는다.
+ * `Adapter` 인터페이스 밖이다: 어댑터 패키지가 `runStaticChecks`를 모듈로 export하고 `adapter/load.ts`가 {@link StaticRunner}로 꺼낸다.
+ */
+export interface StaticCheckRun {
+  results: CheckResult[];
+  output: CapturedOutput;
+  /** dependency-cruiser JSON 경로 (절대). 안 생겼으면 `null` */
+  graphJsonPath: string | null;
+  tool: ToolInfo;
+}
+
+/** 정적 검사 러너. `plumb check`(`checks/run-check.ts`)와 View 생성기(`views/types.ts`)가 주입받는다 */
+export type StaticRunner = (ctx: AdapterContext) => Promise<StaticCheckRun>;
+
+// ---------------------------------------------------------------------------
+// 7. 정적 호출 그래프 → `FlowNode` 트리 (이슈 #59, view-flow 4.2 "정적 그래프는 두 안의 공통 재료")
+// ---------------------------------------------------------------------------
+
+/** 파서: 정적 호출 그래프. 진입점당 `FlowNode` 하나, 모든 노드 `evidence: 'static'` */
+export interface StaticCallGraph {
+  tool: ToolInfo;
+  entries: FlowNode[];
+  /** 노드 ID → `file:line` (스팬 이름을 역조회해 앵커를 붙인다 — 정본은 파서, view-flow 3절) */
+  symbols: Record<string, Anchor>;
+  /** 공개 진입점 노드 ID → 그것을 import하는 테스트 파일 (루트 기준). B안 "참조됨"의 재료 */
+  testRefs: Record<string, string[]>;
+  /** 못 본 것 (동적 import · DI · 핸들러 연결 등). 화면에 그대로 보인다 */
+  warnings: string[];
+}
 
 // ---------------------------------------------------------------------------
 // Adapter
@@ -256,9 +317,15 @@ export interface Adapter {
    * 소비: M8 wave 1 도메인 흐름도 spike (OTel 수집 시도 → 불가 시 정적 호출 그래프).
    */
   collectTraces(ctx: AdapterContext, opts: TraceCollectOptions): Promise<TraceResult>;
+
+  /**
+   * (선택) 정적 호출 그래프 → `FlowNode` 트리 (view-flow 4.2). Next.js 어댑터는 TS 컴파일러 API로 만든다 (#59).
+   * 없으면 흐름도 View는 "정적 호출 그래프를 제공하지 않는다"를 `graphError`에 적는다. 다섯 역할 밖이라 선택 메서드 (#63).
+   */
+  buildCallGraph?(ctx: AdapterContext): Promise<StaticCallGraph>;
 }
 
-/** 어댑터 메서드 이름. `NotImplementedError`(errors.ts)의 `method` */
+/** 필수 어댑터 메서드 이름 (다섯 역할). `NotImplementedError`(errors.ts)의 `method`. 선택 메서드 `buildCallGraph`는 들어가지 않는다 */
 export type AdapterMethod = 'extractDependencies' | 'generateStubs' | 'runTests' | 'readSchemas' | 'collectTraces';
 
 /** 다섯 메서드 이름의 런타임 목록. 인터페이스 준수 테스트가 쓴다 */

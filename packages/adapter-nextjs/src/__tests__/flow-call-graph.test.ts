@@ -150,7 +150,7 @@ describe('buildCallGraph(): testbed', () => {
     expect(graph.entries).toEqual([]);
   }, 60_000);
 
-  it('nextjsAdapter.buildCallGraph가 이 구현이다 (CallGraphProvider)', () => {
+  it('nextjsAdapter.buildCallGraph가 이 구현이다 (Adapter 선택 메서드)', () => {
     expect(typeof nextjsAdapter.buildCallGraph).toBe('function');
   });
 });

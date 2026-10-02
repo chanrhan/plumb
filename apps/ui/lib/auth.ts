@@ -9,6 +9,8 @@
  * 미들웨어(Edge 런타임)와 route handler(Node)가 같이 쓰므로 `node:crypto`가 아니라 Web Crypto만 쓴다.
  */
 
+import type { ApiError } from '@plumb/core';
+
 /** 세션 쿠키 이름 */
 export const COOKIE = 'plumb_session';
 
@@ -18,14 +20,10 @@ export const TOKEN_ENV = 'PLUMB_UI_TOKEN';
 /** 쿠키 속성 (`httpOnly · SameSite=Strict · Path=/`). `secure`는 127.0.0.1 http 이므로 없다 */
 export const COOKIE_ATTRIBUTES = { httpOnly: true, sameSite: 'strict', path: '/' } as const;
 
-/** 401 본문. `code`는 이슈 #33 그대로 (`UNAUTHORIZED`), `message`는 work-approve 4절 문구 */
+/** 401 본문. `code`는 이슈 #33 그대로 (`UNAUTHORIZED` — #63에서 공유 타입 `ApiError`도 같은 값), `message`는 work-approve 4절 문구 */
 export const NO_SESSION_MESSAGE = '세션이 없습니다. `plumb ui` 를 다시 시작하면 브라우저가 `/auth` 로 열립니다';
 
-export interface UnauthorizedBody {
-  status: 401;
-  code: 'UNAUTHORIZED';
-  message: string;
-}
+export type UnauthorizedBody = Extract<ApiError, { status: 401 }>;
 
 export function unauthorizedBody(): UnauthorizedBody {
   return { status: 401, code: 'UNAUTHORIZED', message: NO_SESSION_MESSAGE };

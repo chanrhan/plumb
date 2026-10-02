@@ -282,7 +282,8 @@ describe('verificationView.generate — 저장소 기록만 읽는다', () => {
       codeWithoutRules: [],
       rulesWithoutCode: [],
       untestedFlows: { unavailable: 'no-trace' },
-      unclassifiedFiles: 0,
+      // 이 생성기는 블록 그래프를 읽지 않는다 → 측정 불가 (0이 아니다, #63)
+      unclassifiedFiles: { unavailable: 'no-graph' },
       quarantined: [],
     });
 

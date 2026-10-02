@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { NotImplementedError } from '../../adapter/errors.js';
-import type { Adapter, BlockGraph, TestRunResult } from '../../adapter/types.js';
+import type { Adapter, BlockGraph, StaticCheckRun, TestRunResult } from '../../adapter/types.js';
 import { openStore, type Store } from '../../store/index.js';
 import type { CapturedOutput, CheckResult, PlumbConfig, Proposal, Rule } from '../../types/index.js';
 import {
@@ -19,7 +19,6 @@ import {
   type RunCheckResult,
   ruleSummary,
   runCheck,
-  type StaticCheckRun,
   shortCommit,
 } from '../run-check.js';
 import { graph as graphFixture } from './fixtures.js';
@@ -399,7 +398,12 @@ describe('runCheck — 러너 실패 · 부분 실패', () => {
       '[plumb] 블록 그래프 없음 — "규칙 0개 블록" · "미분류 파일"은 측정 불가: dependency-cruiser가 대상에 설치되어 있지 않다',
     ]);
     expect(result.graphUnavailable).toEqual({ reason: 'dependency-cruiser가 대상에 설치되어 있지 않다' });
-    expect(result.outOfScope).toMatchObject({ blocksWithoutRules: [], unclassifiedFiles: 0, quarantined: [] });
+    // 블록 그래프 없음 → 파서에서 나오는 두 값은 측정 불가 (0이 아니다, #63)
+    expect(result.outOfScope).toMatchObject({
+      blocksWithoutRules: { unavailable: 'no-graph' },
+      unclassifiedFiles: { unavailable: 'no-graph' },
+      quarantined: [],
+    });
     expect(result.common.every((row) => row.result.status === 'unchecked')).toBe(true);
     expect(result.statuses).toEqual([]); // 이전 기록 없음
     expect(await readdir(store.paths.ruleStatusDir)).toEqual([]);
@@ -470,6 +474,11 @@ describe('표시 문구', () => {
 
 /** 타입만 확인 — 결과 모양이 CLI · UI가 기대하는 필드를 가진다 */
 function _shape(result: RunCheckResult): string[] {
-  return [result.run.runId, ...result.statuses.map((record) => record.ruleId), ...result.outOfScope.blocksWithoutRules];
+  const blocks = result.outOfScope.blocksWithoutRules;
+  return [
+    result.run.runId,
+    ...result.statuses.map((record) => record.ruleId),
+    ...('unavailable' in blocks ? [] : blocks),
+  ];
 }
 void _shape;

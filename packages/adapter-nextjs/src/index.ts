@@ -4,16 +4,11 @@
  * 대상 스택: Next.js + PostgreSQL + Prisma + Vitest + fast-check + Playwright + dependency-cruiser + OpenTelemetry.
  * 구현된 메서드: `extractDependencies`(#45) · `runTests`(#44) · `readSchemas`(#55) · `collectTraces`(#59). 나머지는 {@link NotImplementedError}를 던지며,
  * 구현 마일스톤은 `docs/ROADMAP.md` — M4 generateStubs.
- * 인터페이스 밖의 추가 능력: 정적 호출 그래프 `buildCallGraph`(#59, 코어 `CallGraphProvider`) — 흐름도 View가 덕 타이핑으로 찾는다.
+ * 선택 메서드 `buildCallGraph`(#59)도 구현한다 — 흐름도 View가 `Adapter.buildCallGraph`로 부른다 (#63 전에는 `CallGraphProvider` 덕 타이핑).
+ * 정적 검사 `runStaticChecks`는 인터페이스 밖의 모듈 export — 코어 `adapter/load.ts`가 `StaticRunner`로 꺼낸다.
  */
 
-import {
-  type Adapter,
-  type AdapterName,
-  type CallGraphProvider,
-  NotImplementedError,
-  registerAdapter,
-} from '@plumb/core';
+import { type Adapter, type AdapterName, NotImplementedError, registerAdapter } from '@plumb/core';
 import { buildCallGraph } from './call-graph.js';
 import { collectTraces } from './collect-traces.js';
 import { extractDependencies } from './extract-dependencies.js';
@@ -38,7 +33,7 @@ export {
 export const ADAPTER_NAME: AdapterName = 'nextjs';
 
 /** Next.js 어댑터. 미구현 메서드의 예정 마일스톤은 던지는 오류에 적혀 있다 */
-export const nextjsAdapter: Adapter & CallGraphProvider = {
+export const nextjsAdapter: Adapter = {
   name: ADAPTER_NAME,
 
   /** dependency-cruiser JSON + `config.blocks` → 블록 그래프 JSON (#45, `extract-dependencies.ts`) */

@@ -734,7 +734,7 @@ describe('순수 함수', () => {
       tool: { name: 'openapi', version: '3.1.0' },
       data: {},
     };
-    const approval = { path: 'openapi.yaml', hash: 'h1', approvedAt: NOW.toISOString(), commit: 'c1' };
+    const approval = { path: 'openapi.yaml', hash: 'h1', approvedAt: NOW.toISOString(), commit: 'c1', by: 'test' };
     expect(toContractFile(t.root, 'openapi', parsed, approval).status).toBe('match');
     expect(toContractFile(t.root, 'openapi', parsed, { ...approval, hash: 'h2' }).status).toBe('changed');
     expect(toContractFile(t.root, 'openapi', parsed, undefined).status).toBe('unapproved');

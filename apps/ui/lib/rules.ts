@@ -14,16 +14,13 @@ import { isAbsolute, join } from 'node:path';
 import {
   type Approval,
   type ApprovalState,
-  type ApproveResponse,
   type CheckDetail,
   type CheckRun,
   type DependencyStatus,
   hashProposal,
-  type LastCheck,
   loadConfig,
   type ParsedPlumbConfig,
   type Proposal,
-  type RejectResponse,
   RULE_ID_PATTERN,
   type Rule,
   type RuleDetailResponse,
@@ -166,13 +163,8 @@ function listItem(
   };
 }
 
-/** `RuleListResponse` + 머리줄의 마지막 검사 (타입 보완 후보 — PR 본문) */
-export interface RuleList extends RuleListResponse {
-  /** 저장소: `checks/`의 최신 실행. 한 번도 안 돌렸으면 없음 ("마지막 검사 없음") */
-  lastCheck?: LastCheck;
-}
-
-export async function readRuleList(): Promise<RuleList> {
+/** `GET /api/rules` 본문. `lastCheck`(머리줄 "마지막 검사")는 저장소 `checks/`의 최신 실행 — 한 번도 안 돌렸으면 없음 */
+export async function readRuleList(): Promise<RuleListResponse> {
   const store = await getStore();
   const config = await getConfig();
   const entries = await readRuleEntries(store);
@@ -338,17 +330,10 @@ export interface DecisionFile {
   exists: boolean;
 }
 
-/** `RuleDetailResponse` + 화면이 더 쓰는 두 값 (타입 보완 후보 — PR 본문) */
-export interface RuleDetail extends RuleDetailResponse {
-  /** 미처리 제안의 해시. `POST …/approve`의 `proposalHash`로 보낸다 (409 판정) */
-  proposalHash?: string;
-  decisionFile?: DecisionFile;
-  /** 실행: 최근 n회 상태 · 이 상태가 된 시각 (`RuleStatusRecord`). 검사 기록이 있을 때만 */
-  history?: RuleStatus[];
-  since?: string;
-}
-
-export async function readRuleDetail(id: RuleId): Promise<RuleDetail | undefined> {
+/**
+ * `GET /api/rules/:id` 본문. `proposalHash`(409 판정용) · `decisionFile` · `history` · `since`는 #63에서 `RuleDetailResponse`에 들어갔다.
+ */
+export async function readRuleDetail(id: RuleId): Promise<RuleDetailResponse | undefined> {
   const store = await getStore();
   const config = await getConfig();
   const entry = await readRuleEntry(store, id);
@@ -396,17 +381,3 @@ export async function readRuleDetail(id: RuleId): Promise<RuleDetail | undefined
     highRisk: shown !== null && isHighRiskRule(shown, config),
   };
 }
-
-// ---------------------------------------------------------------------------
-// POST /api/rules/:id/approve · reject 응답
-// ---------------------------------------------------------------------------
-
-/**
- * 승인 응답. 고위험 완화·삭제·경계 변경(기획안 §9.1)이면 코어가 아무것도 쓰지 않고 `requiresPriorApproval`을 돌려준다 —
- * 200에 그 플래그를 담고 화면은 "사전 승인 필요 — M10"을 보인다 (`ApproveResponse`에 없는 변형 — 타입 보완 후보)
- */
-export type ApproveRouteResponse =
-  | (ApproveResponse & { requiresPriorApproval: false })
-  | { requiresPriorApproval: true; approvalState: 'provisional'; proposal: Proposal; unconfirmed: number };
-
-export type RejectRouteResponse = RejectResponse;

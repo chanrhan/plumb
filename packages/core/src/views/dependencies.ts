@@ -74,10 +74,9 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((v) => typeof v === 'string');
 }
 
-/** `NextjsBlockGraph.externals: { [pkg]: fromBlocks[] }` (#45). 코어 `BlockGraph`에는 없는 필드라 모양을 검사해 읽는다 */
+/** `BlockGraph.externals: { [pkg]: fromBlocks[] }` (#45, #63에서 공통 형식에 올림). 어댑터가 안 주면 `null` — "분석 없음" */
 export function externalsOf(graph: BlockGraph | null): ExternalsMap | null {
-  if (graph === null) return null;
-  const raw = (graph as BlockGraph & { externals?: unknown }).externals;
+  const raw: unknown = graph?.externals;
   if (raw === undefined || raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const out: ExternalsMap = {};
   for (const [pkg, blocks] of Object.entries(raw as Record<string, unknown>)) {
