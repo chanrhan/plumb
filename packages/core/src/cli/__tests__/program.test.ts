@@ -9,8 +9,8 @@ import {
 } from '../program.js';
 
 const EXPECTED_COMMANDS = ['init', 'rule', 'approve', 'run', 'check', 'views', 'ui', 'open'];
-/** M3(#32)에서 구현된 명령. 나머지는 자리 표시 */
-const IMPLEMENTED = ['rule', 'approve', 'ui'];
+/** 구현된 명령 — M3(#32 rule · approve, #33 ui) · M5(#47 check). 나머지는 자리 표시 */
+const IMPLEMENTED = ['rule', 'approve', 'check', 'ui'];
 const STUBS = EXPECTED_COMMANDS.filter((name) => !IMPLEMENTED.includes(name));
 
 /** 테스트용 프로그램. 종료 대신 기록하고, 출력은 버퍼에 모은다 */
@@ -58,6 +58,12 @@ describe('plumb --help', () => {
     expect(rule?.commands.map((c) => c.name())).toEqual(['list', 'show', 'propose', 'reject']);
   });
 
+  it('check에 --json · --strict · --filter <pattern>이 있다', () => {
+    const { program } = testProgram();
+    const check = program.commands.find((c) => c.name() === 'check');
+    expect(check?.options.map((o) => o.long)).toEqual(['--json', '--strict', '--filter']);
+  });
+
   it('--help는 stdout에 쓰고 commander.helpDisplayed로 끝난다', async () => {
     const { program, out } = testProgram();
 
@@ -99,7 +105,6 @@ describe('미구현 하위 명령', () => {
     expect(byName).toEqual({
       init: 'M10',
       run: 'M6',
-      check: 'M5',
       views: 'M8',
       open: 'M8',
     });
@@ -108,7 +113,7 @@ describe('미구현 하위 명령', () => {
   it('--target은 하위 명령 앞에서 전역 옵션으로 읽힌다', async () => {
     const { program, exits } = testProgram();
 
-    await program.parseAsync(['--target', './service', 'check'], { from: 'user' });
+    await program.parseAsync(['--target', './service', 'views'], { from: 'user' });
 
     expect(program.opts().target).toBe('./service');
     expect(exits).toEqual([2]);

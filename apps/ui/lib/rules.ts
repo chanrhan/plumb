@@ -5,7 +5,8 @@
  *   M3의 추가 제안은 승인 전까지 `rules.yaml`에 없으므로(기획안 §10) 제안만 있는 규칙도 목록에 보인다.
  * - 승인 상태 = 미처리 제안이 있으면 `provisional`, 없으면 승인 기록의 마지막 항목(approve → approved · reject → rejected),
  *   기록도 없으면 `provisional`(손으로 적은 규칙 — 승인 행위가 없었다).
- * - 상태(🟢 등)는 M5 전까지 전부 ⬜ `unchecked`. 승인은 상태를 바꾸지 않는다 (§7.3).
+ * - 상태(🟢 등)는 마지막 `plumb check`가 쓴 `rule-status/<id>.json`(`store.ruleStatus`)에서 읽는다 (#47). 기록이 없으면 ⬜ `not-run`.
+ *   검사 파일별 결과는 `checks/`의 최신 실행(`store.checks.latest()`)에서. 승인은 상태를 바꾸지 않는다 (§7.3).
  */
 
 import { access } from 'node:fs/promises';
@@ -15,8 +16,10 @@ import {
   type ApprovalState,
   type ApproveResponse,
   type CheckDetail,
+  type CheckRun,
   type DependencyStatus,
   hashProposal,
+  type LastCheck,
   loadConfig,
   type ParsedPlumbConfig,
   type Proposal,
@@ -32,6 +35,7 @@ import {
   type RuleListResponse,
   type RuleStatus,
   type RuleStatusDetail,
+  type RuleStatusRecord,
   type Store,
 } from '@plumb/core';
 import { getStore, getTarget } from './store';
@@ -134,33 +138,54 @@ export async function readRuleEntries(store: Store): Promise<RuleEntry[]> {
 // GET /api/rules (work-approve 3.1)
 // ---------------------------------------------------------------------------
 
-function listItem(entry: RuleEntry, config: ParsedPlumbConfig): RuleListItem | null {
+/** 상태 기록 → 목록 · 상세의 `status` · `statusAt`. 기록이 없으면 ⬜ ("검사 없음") */
+function statusAtOf(record: RuleStatusRecord | undefined): { commit: string; checkedAt: string } | undefined {
+  return record === undefined ? undefined : { commit: record.commit, checkedAt: record.checkedAt };
+}
+
+function listItem(
+  entry: RuleEntry,
+  config: ParsedPlumbConfig,
+  record: RuleStatusRecord | undefined,
+): RuleListItem | null {
   const rule = entry.shown;
   if (rule === null) return null;
+  const statusAt = statusAtOf(record);
   return {
     id: entry.id,
     ...(rule.block === undefined ? {} : { block: rule.block }),
     blockKnown: rule.block !== undefined && config.blocks?.[rule.block] !== undefined,
     kind: rule.kind,
     statement: rule.statement,
-    // M5 전까지 검사 이력이 없다 → 전부 ⬜ ("검사 없음")
-    status: 'unchecked',
+    // 저장소: 마지막 plumb check 결과 기록. 없으면 ⬜ not-run
+    status: record?.detail.status ?? 'unchecked',
+    ...(statusAt === undefined ? {} : { statusAt }),
     approval: entry.approval,
     highRisk: isHighRiskRule(rule, config),
     ...(entry.pending === undefined ? {} : { pendingProposal: entry.pending.id }),
   };
 }
 
-export async function readRuleList(): Promise<RuleListResponse> {
+/** `RuleListResponse` + 머리줄의 마지막 검사 (타입 보완 후보 — PR 본문) */
+export interface RuleList extends RuleListResponse {
+  /** 저장소: `checks/`의 최신 실행. 한 번도 안 돌렸으면 없음 ("마지막 검사 없음") */
+  lastCheck?: LastCheck;
+}
+
+export async function readRuleList(): Promise<RuleList> {
   const store = await getStore();
   const config = await getConfig();
   const entries = await readRuleEntries(store);
   const status = await store.status();
+  const records = new Map((await store.ruleStatus.list()).map((record) => [record.ruleId, record]));
   const maxUnconfirmed = config.reviewQueue.maxUnconfirmed;
   const maxDays = config.reviewQueue.maxDays;
   const longest = status.longestPendingDays;
   return {
-    rules: entries.map((entry) => listItem(entry, config)).filter((item): item is RuleListItem => item !== null),
+    rules: entries
+      .map((entry) => listItem(entry, config, records.get(entry.id)))
+      .filter((item): item is RuleListItem => item !== null),
+    ...(status.lastCheck === null ? {} : { lastCheck: status.lastCheck }),
     unconfirmed: status.unconfirmed,
     ...(longest === null ? {} : { longestPendingDays: longest }),
     queueLimit: {
@@ -269,18 +294,36 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
-/** 파서: 대상 레포에 검사 파일이 있는가. `static`은 dependency-cruiser 규칙 이름이라 파일이 아니다 → 있다고 본다 */
-async function checkDetails(rule: Rule, target: string): Promise<CheckDetail[]> {
+/**
+ * 파서: 대상 레포에 검사 파일이 있는가. `static`은 dependency-cruiser 규칙 이름이라 파일이 아니다 → 있다고 본다.
+ * 실행: 마지막 `plumb check`(`checks/` 최신 실행)에 이 검사의 결과가 있으면 `lastResult`
+ */
+async function checkDetails(rule: Rule, target: string, latest: CheckRun | null): Promise<CheckDetail[]> {
   return Promise.all(
-    rule.checks.map(async (check) => ({
-      check,
-      exists:
-        check.kind === 'static' ? true : await fileExists(isAbsolute(check.ref) ? check.ref : join(target, check.ref)),
-    })),
+    rule.checks.map(async (check) => {
+      const result = latest?.results.find((r) => r.check.ref === check.ref);
+      return {
+        check,
+        exists:
+          check.kind === 'static'
+            ? true
+            : await fileExists(isAbsolute(check.ref) ? check.ref : join(target, check.ref)),
+        ...(result === undefined || latest === null
+          ? {}
+          : {
+              lastResult: {
+                outcome: result.outcome,
+                commit: latest.commit,
+                finishedAt: latest.finishedAt,
+                ...(result.failure === undefined ? {} : { anchor: result.failure.anchor }),
+              },
+            }),
+      };
+    }),
   );
 }
 
-/** ⬜의 이유 (view-verification 3.3 우선순위: 검사 없음 → 검사 파일 없음 → 미승인 → 아직 안 돌림). M5 전까지 전부 ⬜ */
+/** 상태 기록이 없을 때 ⬜의 이유 (view-verification 3.3 우선순위: 검사 없음 → 검사 파일 없음 → 미승인 → 아직 안 돌림) */
 function uncheckedDetail(rule: Rule | null, checks: CheckDetail[], approval: ApprovalState): RuleStatusDetail {
   if (rule === null || rule.checks.length === 0) return { status: 'unchecked', reason: 'no-checks' };
   if (checks.some((check) => !check.exists)) return { status: 'unchecked', reason: 'check-missing' };
@@ -300,6 +343,9 @@ export interface RuleDetail extends RuleDetailResponse {
   /** 미처리 제안의 해시. `POST …/approve`의 `proposalHash`로 보낸다 (409 판정) */
   proposalHash?: string;
   decisionFile?: DecisionFile;
+  /** 실행: 최근 n회 상태 · 이 상태가 된 시각 (`RuleStatusRecord`). 검사 기록이 있을 때만 */
+  history?: RuleStatus[];
+  since?: string;
 }
 
 export async function readRuleDetail(id: RuleId): Promise<RuleDetail | undefined> {
@@ -310,15 +356,18 @@ export async function readRuleDetail(id: RuleId): Promise<RuleDetail | undefined
 
   const target = getTarget();
   const shown = entry.shown;
-  const checks = shown === null ? [] : await checkDetails(shown, target);
+  const record = await store.ruleStatus.get(id);
+  const latest = await store.checks.latest();
+  const checks = shown === null ? [] : await checkDetails(shown, target, latest);
   const dependsOn = shown?.depends_on ?? [];
   const depends: DependencyStatus[] = await Promise.all(
     dependsOn.map(async (ruleId) => ({
       ruleId,
-      status: 'unchecked' as const,
+      status: (await store.ruleStatus.get(ruleId))?.detail.status ?? ('unchecked' as const),
       exists: (await readRuleEntry(store, ruleId)) !== undefined,
     })),
   );
+  const statusAt = statusAtOf(record);
   const decisionId = shown?.decision;
   const decisionFile: DecisionFile | undefined =
     decisionId === undefined
@@ -340,7 +389,10 @@ export async function readRuleDetail(id: RuleId): Promise<RuleDetail | undefined
     ...(decisionFile === undefined ? {} : { decisionFile }),
     depends,
     checks,
-    status: uncheckedDetail(shown, checks, entry.approval),
+    // 저장소: 마지막 plumb check의 상태 기록. 없으면 ⬜의 이유를 규칙 · 파일 · 승인에서 유도한다
+    status: record?.detail ?? uncheckedDetail(shown, checks, entry.approval),
+    ...(statusAt === undefined ? {} : { statusAt }),
+    ...(record === undefined ? {} : { history: record.history, since: record.since }),
     highRisk: shown !== null && isHighRiskRule(shown, config),
   };
 }
