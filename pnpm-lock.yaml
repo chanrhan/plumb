@@ -96,10 +96,19 @@ importers:
       '@plumb/core':
         specifier: workspace:*
         version: link:../core
+      picomatch:
+        specifier: ^4.0.7
+        version: 4.0.7
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.5.15
         version: 2.5.15
+      '@types/node':
+        specifier: ^22.15.0
+        version: 22.20.5
+      '@types/picomatch':
+        specifier: ^4.0.3
+        version: 4.0.3
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -735,6 +744,9 @@ packages:
 
   '@types/node@22.20.5':
     resolution: {integrity: sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA==}
+
+  '@types/picomatch@4.0.3':
+    resolution: {integrity: sha512-iG0T6+nYJ9FAPmx9SsUlnwcq1ZVRuCXcVEvWnntoPlrOpwtSTKNDC9uVAxTsC3PUvJ+99n4RpAcNgBbHX3JSnQ==}
 
   '@types/react-dom@19.3.0':
     resolution: {integrity: sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q==}
@@ -1780,6 +1792,8 @@ snapshots:
   '@types/node@22.20.5':
     dependencies:
       undici-types: 6.21.0
+
+  '@types/picomatch@4.0.3': {}
 
   '@types/react-dom@19.3.0(@types/react@19.3.0)':
     dependencies:

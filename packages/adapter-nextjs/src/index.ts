@@ -2,33 +2,42 @@
  * `@plumb/adapter-nextjs` — 첫 어댑터 뼈대 (이슈 #8, 기획안 §4.4).
  *
  * 대상 스택: Next.js + PostgreSQL + Prisma + Vitest + fast-check + Playwright + dependency-cruiser + OpenTelemetry.
- * 이 단계에서는 인터페이스와 등록 방식만 정한다. 다섯 메서드 모두 {@link NotImplementedError}를 던지며,
- * 구현 마일스톤은 `docs/ROADMAP.md` — M4 generateStubs · M5 runTests · M8 extractDependencies · readSchemas · collectTraces.
+ * 구현된 메서드: `extractDependencies`(#45) · `runTests`(#44). 나머지는 {@link NotImplementedError}를 던지며,
+ * 구현 마일스톤은 `docs/ROADMAP.md` — M4 generateStubs · M8 readSchemas · collectTraces.
  */
 
 import { type Adapter, type AdapterName, NotImplementedError, registerAdapter } from '@plumb/core';
+import { extractDependencies } from './extract-dependencies.js';
+import { runTests } from './run-tests.js';
+
+export * from './extract-dependencies.js';
+export { runTests } from './run-tests.js';
+export {
+  DEPCRUISE_REF_PREFIX,
+  type DepcruiseJson,
+  type DepcruiseViolation,
+  runStaticChecks,
+  type StaticCheckRun,
+  toStaticCheckResults,
+} from './static-checks.js';
 
 /** 등록 이름. `plumb.config.json`의 `adapter: "nextjs"` */
 export const ADAPTER_NAME: AdapterName = 'nextjs';
 
-/** Next.js 어댑터. 구현은 비어 있다 — 각 메서드의 예정 마일스톤은 던지는 오류에 적혀 있다 */
+/** Next.js 어댑터. 미구현 메서드의 예정 마일스톤은 던지는 오류에 적혀 있다 */
 export const nextjsAdapter: Adapter = {
   name: ADAPTER_NAME,
 
-  /** dependency-cruiser → 블록 그래프 JSON. M8 wave 0 (M5 wave 0 1등급 검사의 원자료) */
-  async extractDependencies() {
-    throw new NotImplementedError('extractDependencies', 'M8');
-  },
+  /** dependency-cruiser JSON + `config.blocks` → 블록 그래프 JSON (#45, `extract-dependencies.ts`) */
+  extractDependencies: (ctx) => extractDependencies(ctx),
 
   /** `tsc --declaration` → 공개 진입점 `.d.ts`. M4 wave 1 test-writer */
   async generateStubs() {
     throw new NotImplementedError('generateStubs', 'M4');
   },
 
-  /** Vitest(+ Playwright) → JUnit XML. M5 wave 0 */
-  async runTests() {
-    throw new NotImplementedError('runTests', 'M5');
-  },
+  /** Vitest → JUnit XML + 가로챈 출력 (#44). 정적 검사(depcruise)는 인터페이스 밖의 {@link runStaticChecks}로 따로 부른다 */
+  runTests,
 
   /** OpenAPI · Prisma DMMF · AsyncAPI 파싱. M8 wave 0 */
   async readSchemas() {

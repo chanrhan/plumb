@@ -16,7 +16,9 @@
 | M0 | 완료 | 와이어프레임 9장 + 타입 + 종이 시뮬레이션. 저장 형식 기본값 7건은 #17에서 사람 확인 대기 |
 | M1 | #10만 남음 | #10 SDK 스모크는 `env/local`. 사용자 머신에서 실행 후 `docs/harness-notes.md`가 M4 입력이 된다 |
 | M2 | 완료 | testbed: payment 도메인(naive refund), OpenAPI + Route Handler(422는 계약에만), Vitest(JUnit) + depcruise 블록 규칙 5개 |
-| M3 | 진행 중 | #31 저장소 코어 → #32 CLI · #33 UI 토큰 통로 · #34 UI 규칙 화면 · #35 결정 기록 → #36 rule-drafter `[L]` |
+| M3 | #36만 남음 | 저장소 코어 · CLI(`rule`·`approve`) · UI 토큰 통로 · UI `/rules` · 결정 기록 완료. 쿠키 없는 승인 401 확인. #36 rule-drafter는 `env/local`(#10 뒤) |
+| M4 | 대기 | 전부 `env/local`. #10 결과(`docs/harness-notes.md`)가 입력 |
+| M5 | 진행 중 | #43 JUnit 파서 · #44 어댑터 runTests/정적 · #45 어댑터 블록 그래프 · #46 상태·범위 밖 계산 → #47 `plumb check` |
 
 ## 마일스톤
 
@@ -88,12 +90,13 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 
 **종료 증거**: `plumb check`가 JUnit XML을 읽어 규칙별 🟢🟡🔴⬜ + 커밋·시각을 저장소에 기록 · 출력이 M0 검증 상태 타입을 만족
 
-| wave | 내용 |
-|---|---|
-| 0 | JUnit XML 파서 |
-| 0 | dependency-cruiser 결과 → 1등급 검사 결과 (adapter-nextjs) |
-| 0 | `checks` 매핑 + 상태 계산 + "검사 범위 밖" 계산 |
-| 1 | `plumb check`로 묶기 + 저장소 기록 |
+| wave | 이슈 | 내용 |
+|---|---|---|
+| 0 | #43 | JUnit XML 파서 → `CheckResult` 재료 + 테스트 파일 경로로 규칙 매핑 |
+| 0 | #44 | adapter-nextjs `runTests()`: Vitest JUnit 실행(가로챈 출력) + depcruise 위반 → 1등급 정적 결과 |
+| 0 | #45 | adapter-nextjs `extractDependencies()`: depcruise JSON + `blocks` 설정 → 블록 그래프(L0/L1 · 간선 · 미분류) |
+| 0 | #46 | 규칙 상태(`RuleStatusRecord`) · 검사 범위 밖(`OutOfScope`) · 블록 공통 행 계산 + 저장소 `checks/`·`rule-status/` |
+| 1 | #47 | `plumb check`로 묶기 + 표 출력 + `rule list`·UI 상태 열 연결 |
 
 ### M6 오케스트레이터 + 실행 화면 `[L]`
 
@@ -144,4 +147,4 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 
 ## 이슈 등록 시점
 
-M0 · M1 · M2 · M3 이슈는 등록했다. M2 이후는 **각 마일스톤을 시작할 때** 등록한다. 그 시점의 타입과 구조를 반영해야 범위와 범위 밖이 정확해지기 때문이다.
+M0 · M1 · M2 · M3 · M5 이슈는 등록했다. M4는 #10 결과를 보고 등록한다. M2 이후는 **각 마일스톤을 시작할 때** 등록한다. 그 시점의 타입과 구조를 반영해야 범위와 범위 밖이 정확해지기 때문이다.
