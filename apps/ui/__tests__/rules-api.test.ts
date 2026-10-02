@@ -1,6 +1,7 @@
 /**
  * 이슈 #34 "완료 증거": 임시 저장소를 `PLUMB_TARGET`으로 두고 route handler 함수를 직접 부른다.
- * 목록 빈 배열 → 제안 작성(코어 API) → 목록 1(provisional) → approve 200 → 승인 상태 → reject 사유 없음 400 → 없는 id 404.
+ * 목록 빈 배열 → 제안 작성(코어 API) → 목록 1(provisional) → approve 200 → 승인 상태 → `plumb check` 기록(코어 API로 `checks/` ·
+ * `rule-status/`) → 상태 열 🔴 + 커밋 · 시각 + 실패 file:line (#47) → reject 사유 없음 400 → 없는 id 404.
  * 인증(401)은 #33 미들웨어의 몫이라 여기 없다.
  */
 
@@ -10,6 +11,8 @@ import { join } from 'node:path';
 import {
   type ApiError,
   type Approval,
+  type CheckFailure,
+  type CheckRef,
   hashProposal,
   loadConfig,
   openStore,
@@ -22,6 +25,8 @@ import { NextRequest } from 'next/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ApproveRouteResponse, RuleDetail } from '@/lib/rules';
 
+const REFUND_CHECK: CheckRef = { kind: 'acceptance', ref: 'test/acceptance/refund-window.property.spec.ts' };
+
 const REFUND_RULE: Rule = {
   id: 'pay.refund-window',
   block: 'payment',
@@ -30,8 +35,19 @@ const REFUND_RULE: Rule = {
   source: 'plan:PAY-02',
   risk: 'high',
   depends_on: ['pay.payment-record'],
-  checks: [{ kind: 'acceptance', ref: 'test/acceptance/refund-window.property.spec.ts' }],
+  checks: [REFUND_CHECK],
   decision: 'D-0001',
+};
+
+/** `plumb check`가 남기는 모양의 기록 (checks/ + rule-status/). 상태 열의 원자료 */
+const CHECK_COMMIT = 'a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0';
+const CHECKED_AT = '2026-10-02T09:00:05.000Z';
+const REFUND_FAILURE: CheckFailure = {
+  check: REFUND_CHECK,
+  anchor: { file: 'test/acceptance/refund-window.property.spec.ts', line: 42 },
+  message: 'expected 8 to be less than 8',
+  counterexample: '[8]',
+  seed: '42',
 };
 
 function proposalFor(rule: Rule, overrides: Partial<Proposal> = {}): Proposal {
@@ -212,6 +228,62 @@ describe('규칙 API — 목록 → 제안 → 승인 → 기각 오류 → 404'
       ctx('pay.refund-window'),
     );
     expect(again.status).toBe(409);
+  });
+
+  it('plumb check 기록이 있으면 목록 status 🔴 + statusAt, 상세에 failures file:line · 검사 파일별 lastResult · 이력', async () => {
+    await store.checks.write({
+      runId: 'c-20261002T090005000Z',
+      commit: CHECK_COMMIT,
+      startedAt: '2026-10-02T09:00:01.000Z',
+      finishedAt: CHECKED_AT,
+      runner: { exitCode: 1 },
+      results: [
+        { check: REFUND_CHECK, ruleIds: [REFUND_RULE.id], outcome: 'fail', durationSec: 0.02, failure: REFUND_FAILURE },
+      ],
+      quarantined: [],
+      counts: { junit: 1, static: 0 },
+      storeStatus: 'ok',
+    });
+    await store.ruleStatus.write([
+      {
+        ruleId: REFUND_RULE.id,
+        detail: { status: 'fail', failures: [REFUND_FAILURE] },
+        since: CHECKED_AT,
+        commit: CHECK_COMMIT,
+        checkedAt: CHECKED_AT,
+        history: ['unchecked', 'fail'],
+      },
+    ]);
+
+    const list = (await (await routes.list.GET()).json()) as RuleListResponse;
+    expect(list.rules[0]).toMatchObject({
+      id: 'pay.refund-window',
+      status: 'fail',
+      statusAt: { commit: CHECK_COMMIT, checkedAt: CHECKED_AT },
+      approval: 'approved', // 검사는 승인 상태를 바꾸지 않는다
+    });
+
+    const detail = (await (
+      await routes.detail.GET(get('/api/rules/pay.refund-window'), ctx('pay.refund-window'))
+    ).json()) as RuleDetail;
+    expect(detail.status).toEqual({ status: 'fail', failures: [REFUND_FAILURE] });
+    expect(detail.statusAt).toEqual({ commit: CHECK_COMMIT, checkedAt: CHECKED_AT });
+    expect(detail.history).toEqual(['unchecked', 'fail']);
+    expect(detail.since).toBe(CHECKED_AT);
+    expect(detail.checks).toEqual([
+      {
+        check: REFUND_CHECK,
+        exists: false,
+        lastResult: {
+          outcome: 'fail',
+          commit: CHECK_COMMIT,
+          finishedAt: CHECKED_AT,
+          anchor: { file: 'test/acceptance/refund-window.property.spec.ts', line: 42 },
+        },
+      },
+    ]);
+    // 의존 규칙의 상태도 rule-status에서 (기록 없음 → ⬜)
+    expect(detail.depends).toEqual([{ ruleId: 'pay.payment-record', status: 'unchecked', exists: false }]);
   });
 
   it('reject: 사유 없음 400 reason-required, 사유 있으면 200 · 기각 상태 · 기본 목록에서 숨김', async () => {
