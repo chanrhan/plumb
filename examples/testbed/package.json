@@ -6,14 +6,17 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "typecheck": "tsc --noEmit",
+    "build": "prisma generate && next build",
+    "typecheck": "prisma generate && tsc --noEmit",
     "lint": "biome check .",
     "test": "echo \"test: #21 에서 vitest 설정\" && exit 0",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:local": "bash scripts/db-local.sh",
-    "prisma:validate": "prisma validate"
+    "db:seed": "tsx prisma/seed.ts",
+    "prisma:validate": "prisma validate",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev"
   },
   "dependencies": {
     "@prisma/client": "^6",
@@ -27,6 +30,8 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "prisma": "^6",
-    "typescript": "^5.9.3"
+    "tsx": "^4",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
   }
 }
