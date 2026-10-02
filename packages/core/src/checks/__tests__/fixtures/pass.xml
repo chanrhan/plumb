@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="7" failures="0" errors="0" time="0.013547555">
+    <testsuite name="src/domains/payment/__tests__/payment.unit.test.ts" timestamp="2026-10-02T04:14:20.414Z" hostname="vm" tests="7" failures="0" errors="0" skipped="0" time="0.013547555">
+        <testcase classname="src/domains/payment/__tests__/payment.unit.test.ts" name="createPayment &gt; amount·currency 로 결제를 만들고 status 는 PAID 다" time="0.004215814">
+        </testcase>
+        <testcase classname="src/domains/payment/__tests__/payment.unit.test.ts" name="createPayment &gt; paidAt 을 생략하면 지금으로 채운다" time="0.00268332">
+        </testcase>
+        <testcase classname="src/domains/payment/__tests__/payment.unit.test.ts" name="refund &gt; 없는 결제면 PaymentNotFoundError" time="0.001542798">
+        </testcase>
+        <testcase classname="src/domains/payment/__tests__/payment.unit.test.ts" name="refund &gt; 1일 지난 결제는 전액 환불된다" time="0.000607151">
+        </testcase>
+        <testcase classname="src/domains/payment/__tests__/payment.unit.test.ts" name="refund &gt; 6일 지난 결제는 전액 환불된다" time="0.000376158">
+        </testcase>
+        <testcase classname="src/domains/payment/__tests__/payment.unit.test.ts" name="refund &gt; 8일 지난 결제도 환불된다 (현재 동작 — 7일 검사 없음)" time="0.000667794">
+        </testcase>
+        <testcase classname="src/domains/payment/__tests__/payment.unit.test.ts" name="refund &gt; requestedAt 을 생략하면 지금으로 채운다" time="0.002003473">
+        </testcase>
+    </testsuite>
+</testsuites>

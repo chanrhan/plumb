@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="1" failures="1" errors="0" time="0.01">
+    <testsuite name="test/acceptance/refund-window.property.spec.ts" tests="1" failures="1" errors="0" skipped="0" time="0.01">
+        <testcase classname="test/acceptance/refund-window.property.spec.ts" name="잘린 보고서" time="0.01">
+            <failure message="expected 2 to be 3" type="AssertionError">
+AssertionError: expected 2 to be 3
+ ❯ test/acceptance/refund-window.property.spec.ts:57:19
+        </testcase>
+    </testsuite>
+</testsuites>

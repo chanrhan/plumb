@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="7" failures="2" errors="1" time="0.051">
+    <testsuite name="test/acceptance/refund-window.property.spec.ts" timestamp="2026-10-02T04:15:11.641Z" hostname="vm" tests="4" failures="2" errors="0" skipped="1" time="0.031">
+        <testcase classname="test/acceptance/refund-window.property.spec.ts" name="환불 기한 &gt; 7일을 초과한 환불 요청은 거절된다" time="0.023415946">
+            <failure message="Property failed after 1 test(s)
+Seed: 42
+Path: 0:1:0:0:1:0
+Counterexample: [8]
+Shrunk 5 time(s)
+Got error: AssertionError: expected 8 to be less than 8
+    at /repo/testbed/test/acceptance/refund-window.property.spec.ts:42:22
+    at Property.predicate (file:///repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:1355:99)
+    at /repo/testbed/test/acceptance/refund-window.property.spec.ts:38:8" type="Error">
+Error: Property failed after 1 test(s)
+Seed: 42
+Path: 0:1:0:0:1:0
+Counterexample: [8]
+Shrunk 5 time(s)
+Got error: AssertionError: expected 8 to be less than 8
+    at /repo/testbed/test/acceptance/refund-window.property.spec.ts:42:22
+    at Property.predicate (file:///repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:1355:99)
+    at Property.run (file:///repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:1324:24)
+    at Module.assert (file:///repo/node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2660:14)
+    at /repo/testbed/test/acceptance/refund-window.property.spec.ts:38:8
+    at file:///repo/node_modules/.pnpm/@vitest+runner@3.2.7/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+ ❯ test/acceptance/refund-window.property.spec.ts:42:22
+ ❯ Property.predicate ../../node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:1355:99
+ ❯ Module.assert ../../node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2660:14
+ ❯ test/acceptance/refund-window.property.spec.ts:38:8
+ ❯ Object.report [as reporter] test/setup.ts:22:9
+ ❯ reportRunDetails ../../node_modules/.pnpm/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2491:70
+ ❯ test/acceptance/refund-window.property.spec.ts:38:8
+            </failure>
+        </testcase>
+        <testcase classname="test/acceptance/refund-window.property.spec.ts" name="환불 기한 &gt; 환불 금액은 결제 금액과 같다" time="0.007627768">
+            <failure message="expected 2 to be 3 // Object.is equality" type="AssertionError">
+AssertionError: expected 2 to be 3 // Object.is equality
+
+- Expected
++ Received
+
+- 3
++ 2
+
+ ❯ test/acceptance/refund-window.property.spec.ts:57:19
+            </failure>
+        </testcase>
+        <testcase classname="test/acceptance/refund-window.property.spec.ts" name="환불 기한 &gt; 부분 환불 (미구현)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/acceptance/refund-window.property.spec.ts" name="환불 기한 &gt; 7일 이내 환불 요청은 승인된다" time="0.000399556">
+        </testcase>
+    </testsuite>
+    <testsuite name="test/acceptance/payment-record.spec.ts" timestamp="2026-10-02T04:15:11.700Z" hostname="vm" tests="1" failures="0" errors="1" skipped="0" time="0.005">
+        <testcase classname="test/acceptance/payment-record.spec.ts" name="결제 기록 &gt; 결제 성공 시 Payment 레코드가 남는다" time="0.005">
+            <error message="connect ECONNREFUSED 127.0.0.1:5432" type="Error">
+Error: connect ECONNREFUSED 127.0.0.1:5432
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1555:16)
+            </error>
+        </testcase>
+    </testsuite>
+    <testsuite name="src/domains/payment/__tests__/payment.unit.test.ts" timestamp="2026-10-02T04:14:20.414Z" hostname="vm" tests="2" failures="0" errors="0" skipped="0" time="0.015">
+        <testcase classname="src/domains/payment/__tests__/payment.unit.test.ts" name="createPayment &gt; amount·currency 로 결제를 만들고 status 는 PAID 다" time="0.004215814">
+        </testcase>
+        <testcase classname="src/domains/payment/__tests__/payment.unit.test.ts" name="refund &gt; 8일 지난 결제도 환불된다 (현재 동작 — 7일 검사 없음)" time="0.010667794">
+        </testcase>
+    </testsuite>
+</testsuites>
