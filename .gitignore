@@ -10,3 +10,9 @@ dist/
 .work/
 # 로컬 보호 저장소 (기획안 §10)
 .plumb/
+
+# node
+pnpm-debug.log*
+npm-debug.log*
+coverage/
+.pnpm-store/

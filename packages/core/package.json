@@ -1,0 +1,31 @@
+{
+  "name": "@plumb/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Plumb 코어 라이브러리. CLI와 UI 서버가 import하는 공통 본체 (HTTP 서버 없음)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/types/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}
