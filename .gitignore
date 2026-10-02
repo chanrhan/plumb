@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+# 역할별 임시 작업 디렉토리 (기획안 §8.6)
+.work/
+# 로컬 보호 저장소 (기획안 §10)
+.plumb/

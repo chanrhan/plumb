@@ -1,0 +1,53 @@
+name: 설계 결정 (decision)
+description: 되돌리기 비싼 결정. 기획안 §6.2 결정 기록의 네 항목을 그대로 쓴다
+title: "[결정] "
+labels: ["type/decision"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Plumb가 에이전트에게 요구하는 결정 기록 형식(결정 · 이유 · 기각한 대안 · 감수한 것)을 Plumb 개발에도 쓴다.
+        네 항목이 모두 채워져야 승인할 수 있다.
+  - type: input
+    id: milestone
+    attributes:
+      label: 마일스톤
+      placeholder: M0 화면 구상
+    validations:
+      required: true
+  - type: textarea
+    id: decision
+    attributes:
+      label: 결정
+      description: 무엇을 어떻게 하기로 했는가. 한두 문장
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: 이유
+      description: 왜 이 결정인가. 기획안의 어느 요구에서 나왔는가
+    validations:
+      required: true
+  - type: textarea
+    id: rejected
+    attributes:
+      label: 기각한 대안
+      description: 대안마다 "대안 — 기각 이유" 한 줄
+      placeholder: |
+        - Electron IPC 직결 — CLI와 CI가 같은 코어를 못 쓴다
+        - WebSocket — 단방향 승인 통로에 과함
+    validations:
+      required: true
+  - type: textarea
+    id: tradeoff
+    attributes:
+      label: 감수하는 것
+      description: 이 결정으로 잃는 것, 생기는 의존, 나중에 문제 될 수 있는 것
+    validations:
+      required: true
+  - type: textarea
+    id: affects
+    attributes:
+      label: 영향 받는 이슈·문서
+      placeholder: "#2, #3, docs/screens/README.md"

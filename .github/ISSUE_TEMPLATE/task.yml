@@ -1,0 +1,78 @@
+name: 작업 (task)
+description: 서브 에이전트 하나 또는 사람 하나가 PR 하나로 끝낼 수 있는 작업 단위
+title: "[M?] "
+labels: ["type/task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        범위 밖과 완료 증거가 비어 있으면 작업을 시작하지 않는다 (CONTRIBUTING 1.1).
+  - type: input
+    id: milestone
+    attributes:
+      label: 마일스톤
+      description: M0~M10. 마일스톤 필드에도 같은 값을 지정한다
+      placeholder: M1 모노레포 골격
+    validations:
+      required: true
+  - type: input
+    id: goal
+    attributes:
+      label: 목표 (한 줄)
+      description: 이 작업이 끝나면 무엇이 가능해지는가
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 범위 (만드는 파일·패키지)
+      description: 디렉토리·파일 단위로. 같은 wave의 다른 이슈와 겹치면 안 된다
+      placeholder: |
+        - packages/core/src/cli/**
+        - packages/core/package.json (bin 필드만)
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: 범위 밖 (건드리면 안 되는 것)
+      description: 공유 타입, 다른 이슈의 범위, 설정 파일 등
+      placeholder: |
+        - packages/core/src/types/**  (타입 변경은 별도 이슈)
+        - apps/ui/**
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 완료 증거 (명령과 기대 출력)
+      description: 명령 하나로 확인되어야 한다. PR의 "검증 증거"에 그 출력을 붙인다
+      placeholder: |
+        pnpm --filter @plumb/core build && node packages/core/dist/cli.js --help
+        → 사용법이 출력되고 exit 0
+    validations:
+      required: true
+  - type: input
+    id: depends
+    attributes:
+      label: 의존 이슈
+      description: 이 이슈가 머지되어 있어야 시작할 수 있는 이슈 번호
+      placeholder: "#6"
+  - type: dropdown
+    id: delegate
+    attributes:
+      label: 서브 에이전트 위임
+      description: CONTRIBUTING 2.1의 네 조건을 모두 만족하면 "가능"
+      options:
+        - 가능 (parallel/ok)
+        - 선행 이슈 머지 후 (parallel/blocked)
+        - 불가 — 로컬 전용 (env/local)
+        - 불가 — 사람이 결정해야 함
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: 참고
+      description: 기획안의 장·절, 관련 결정 이슈
+      placeholder: 기획안 §4.3, 결정 #1
