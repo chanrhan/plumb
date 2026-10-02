@@ -1,8 +1,17 @@
 import { CommanderError } from 'commander';
 import { describe, expect, it } from 'vitest';
-import { createProgram, NOT_IMPLEMENTED_EXIT_CODE, readPackageVersion, STUB_COMMANDS } from '../program.js';
+import {
+  COMMAND_ORDER,
+  createProgram,
+  NOT_IMPLEMENTED_EXIT_CODE,
+  readPackageVersion,
+  STUB_COMMANDS,
+} from '../program.js';
 
 const EXPECTED_COMMANDS = ['init', 'rule', 'approve', 'run', 'check', 'views', 'ui', 'open'];
+/** M3(#32)에서 구현된 명령. 나머지는 자리 표시 */
+const IMPLEMENTED = ['rule', 'approve'];
+const STUBS = EXPECTED_COMMANDS.filter((name) => !IMPLEMENTED.includes(name));
 
 /** 테스트용 프로그램. 종료 대신 기록하고, 출력은 버퍼에 모은다 */
 function testProgram(options: { version?: string } = {}) {
@@ -12,6 +21,7 @@ function testProgram(options: { version?: string } = {}) {
   const program = createProgram({
     version: options.version,
     exit: (code) => exits.push(code),
+    stdout: { write: (chunk: string) => out.push(chunk) },
     stderr: { write: (chunk: string) => err.push(chunk) },
   })
     .exitOverride()
@@ -24,7 +34,8 @@ function testProgram(options: { version?: string } = {}) {
 
 describe('plumb --help', () => {
   it('하위 명령 여덟 개가 이 순서로 보인다', () => {
-    expect(STUB_COMMANDS.map((stub) => stub.name)).toEqual(EXPECTED_COMMANDS);
+    expect([...COMMAND_ORDER]).toEqual(EXPECTED_COMMANDS);
+    expect(STUB_COMMANDS.map((stub) => stub.name)).toEqual(STUBS);
 
     const { program } = testProgram();
     const help = program.helpInformation();
@@ -39,6 +50,12 @@ describe('plumb --help', () => {
   it('전역 옵션 --target <dir>이 보인다', () => {
     const { program } = testProgram();
     expect(program.helpInformation()).toMatch(/^ {2}--target <dir>/m);
+  });
+
+  it('rule 아래에 list · show · propose · reject가 있다', () => {
+    const { program } = testProgram();
+    const rule = program.commands.find((c) => c.name() === 'rule');
+    expect(rule?.commands.map((c) => c.name())).toEqual(['list', 'show', 'propose', 'reject']);
   });
 
   it('--help는 stdout에 쓰고 commander.helpDisplayed로 끝난다', async () => {
@@ -66,7 +83,7 @@ describe('plumb --version', () => {
 });
 
 describe('미구현 하위 명령', () => {
-  it.each(EXPECTED_COMMANDS)('plumb %s → stderr 한 줄 + exit 2', async (name) => {
+  it.each(STUBS)('plumb %s → stderr 한 줄 + exit 2', async (name) => {
     const { program, err, exits } = testProgram();
 
     await program.parseAsync([name], { from: 'user' });
@@ -81,8 +98,6 @@ describe('미구현 하위 명령', () => {
     const byName = Object.fromEntries(STUB_COMMANDS.map((stub) => [stub.name, stub.milestone]));
     expect(byName).toEqual({
       init: 'M10',
-      rule: 'M3',
-      approve: 'M3',
       run: 'M6',
       check: 'M5',
       views: 'M8',
