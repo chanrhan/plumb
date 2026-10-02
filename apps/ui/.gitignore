@@ -1,0 +1,4 @@
+# Next.js 생성물
+.next/
+next-env.d.ts
+*.tsbuildinfo
