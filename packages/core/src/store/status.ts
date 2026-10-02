@@ -10,8 +10,9 @@
  * 해시 체인(변경 로그 전체)은 M10. 여기서는 마지막 승인의 해시 하나만 본다.
  */
 
-import type { CheckRun, StatusResponse } from '../types/index.js';
+import type { CheckRun, LastCheck, StatusResponse } from '../types/index.js';
 import { type ApprovalRecord, listAllApprovals } from './approvals.js';
+import { latestCheckRun } from './checks.js';
 import { listFiles, readJsonFile } from './fs.js';
 import { EMPTY_RULES_HASH } from './init.js';
 import type { StorePaths } from './paths.js';
@@ -35,8 +36,8 @@ export interface StoreStatus {
   unconfirmed: number;
   /** 미확인 제안 중 가장 오래된 것의 체류 일수. 미확인이 없으면 null */
   longestPendingDays: number | null;
-  /** `checks/`의 최신 `CheckRun`. 없으면 null */
-  lastCheck: CheckRun | null;
+  /** `checks/`의 최신 실행(`checks.latest()`)의 식별 `{ runId, commit, finishedAt }`. 없으면 null */
+  lastCheck: LastCheck | null;
   /** 검토 대기열의 미처리 항목 수 (`resolvedAt` 없음). M3는 보통 0 */
   reviewQueue: number;
 }
@@ -67,16 +68,10 @@ function latestByRule(records: ApprovalRecord[]): Map<string, ApprovalRecord> {
   return map;
 }
 
-async function readLastCheck(paths: StorePaths): Promise<CheckRun | null> {
-  let latest: CheckRun | null = null;
-  for (const file of await listFiles(paths.checksDir, '.json')) {
-    const raw = await readJsonFile(`${paths.checksDir}/${file}`);
-    if (typeof raw !== 'object' || raw === null) continue;
-    const run = raw as Partial<CheckRun>;
-    if (typeof run.finishedAt !== 'string' || typeof run.runId !== 'string') continue;
-    if (latest === null || run.finishedAt.localeCompare(latest.finishedAt) >= 0) latest = run as CheckRun;
-  }
-  return latest;
+/** `checks.latest()` → 상단 바 · View 머리말이 쓰는 식별 세 필드 */
+async function readLastCheck(paths: StorePaths): Promise<LastCheck | null> {
+  const latest = await latestCheckRun(paths);
+  return latest === null ? null : { runId: latest.runId, commit: latest.commit, finishedAt: latest.finishedAt };
 }
 
 async function countOpenReviewQueue(paths: StorePaths): Promise<number> {
