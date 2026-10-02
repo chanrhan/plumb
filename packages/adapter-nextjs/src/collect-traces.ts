@@ -21,16 +21,7 @@ export const DEFAULT_TRACE_DIR = 'reports/traces';
 /** `instrumentation-test.ts`가 읽는 환경변수 — 스팬 파일 디렉토리 (루트 기준 상대 또는 절대) */
 export const TRACE_OUT_ENV = 'PLUMB_TRACE_OUT';
 
-export interface CollectTracesOptions extends TraceCollectOptions {
-  /** 실행할 테스트 파일 글롭 (`TestRunOptions.scope`) */
-  scope?: string[];
-  timeoutMs?: number;
-  /** `false`면 테스트를 다시 돌리지 않고 디렉토리의 파일만 읽는다. 기본 `true` */
-  run?: boolean;
-}
-
-/** 코어 `TraceResult`에 이 어댑터가 더한 것 — 같은 실행의 테스트 결과 */
-export type NextjsTraceResult = TraceResult & { run?: TestRunResult };
+// 옵션 `scope` · `timeoutMs` · `run`과 결과의 `run`(같은 실행의 테스트 결과)은 #63에서 코어 `TraceCollectOptions` · `TraceResult`에 들어갔다.
 
 // ---------------------------------------------------------------------------
 // OTLP JSON Span → TraceSpan
@@ -176,7 +167,7 @@ function matchesTestId(span: TraceSpan, ids: NonNullable<TraceCollectOptions['te
  * 트레이스 수집. 이전 실행의 파일을 "이번 것"으로 착각하지 않도록 디렉토리를 비우고 돌린다.
  * 러너가 없거나 죽어도 던지지 않는다 — `unavailable`에 이유(exit code · 꼬리)를 적는다.
  */
-export async function collectTraces(ctx: AdapterContext, opts: CollectTracesOptions = {}): Promise<NextjsTraceResult> {
+export async function collectTraces(ctx: AdapterContext, opts: TraceCollectOptions = {}): Promise<TraceResult> {
   const traceDir = resolveTraceDir(ctx, opts);
   let run: TestRunResult | undefined;
 

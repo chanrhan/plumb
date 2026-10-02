@@ -25,7 +25,6 @@ import type {
   InfraEdge,
   InfraKind,
   RequiredChecks,
-  Risk,
   Rule,
   StaticCheckResult,
   StaticViolation,
@@ -35,23 +34,8 @@ import { anchorLink, codeSpan, escapeCell, heading, mdTable, mermaid, shortCommi
 import { adapterContextOf, type ViewContext, type ViewGenerator } from './types.js';
 
 // ---------------------------------------------------------------------------
-// 타입 — `BlockNode`의 상위집합. 이 생성기가 더하는 필드는 PR의 "타입 보완 후보"
+// 상수 — 블록 노드는 공유 타입 `BlockNode` 그대로 (어댑터가 넣는 `risk` · `declared` · `shared`, 생성기가 채우는 `rules`)
 // ---------------------------------------------------------------------------
-
-/**
- * View에 담기는 블록 노드. 어댑터(`NextjsBlockNode`)가 돌려주는 `risk` · `declared` · `shared`는 그대로 두고,
- * `rules`(저장소 `rules.yaml`에서 이 블록을 가리키는 규칙 수)만 더한다 — 블록 표의 "규칙 수" 열.
- */
-export interface ArchitectureBlockNode extends BlockNode {
-  /** 저장소: `rules.yaml` 중 `block === id`인 규칙 수 */
-  rules?: number;
-  /** 파서: `config.blocks[id].risk` (어댑터가 넣는다) */
-  risk?: Risk;
-  /** 공유 코드 블록(`lib`). 모든 파일이 공개 진입점 */
-  shared?: boolean;
-  /** `config.blocks`에 선언된 블록인가 (어댑터가 넣는다) */
-  declared?: boolean;
-}
 
 /** L0 앱 노드의 ID. L1 `app`(Route Handler 블록)과 다르다 — "대상 하나 = 노드 하나" (view-architecture 3절 "L0 노드 — 앱") */
 export const SYSTEM_NODE_ID = 'system';
@@ -172,15 +156,15 @@ function isInfra(block: BlockNode): boolean {
 }
 
 /** L1 블록만 (L0 인프라 · 앱 노드 제외) */
-export function l1Blocks(blocks: readonly BlockNode[]): ArchitectureBlockNode[] {
-  return blocks.filter((block): block is ArchitectureBlockNode => block.level === 'L1' && !isInfra(block));
+export function l1Blocks(blocks: readonly BlockNode[]): BlockNode[] {
+  return blocks.filter((block): block is BlockNode => block.level === 'L1' && !isInfra(block));
 }
 
 /** L0 앱 노드를 하나 보장한다. 파일 수는 L1 블록 파일 수의 합 */
-function withSystemNode(blocks: readonly BlockNode[], label: string): ArchitectureBlockNode[] {
+function withSystemNode(blocks: readonly BlockNode[], label: string): BlockNode[] {
   const rest = blocks.filter((block) => block.id !== SYSTEM_NODE_ID);
   const files = l1Blocks(rest).reduce((sum, block) => sum + block.files, 0);
-  const system: ArchitectureBlockNode = {
+  const system: BlockNode = {
     id: SYSTEM_NODE_ID,
     level: 'L0',
     kind: 'app',
@@ -192,7 +176,7 @@ function withSystemNode(blocks: readonly BlockNode[], label: string): Architectu
   return [system, ...rest.map((block) => ({ ...block }))];
 }
 
-function withRuleCounts(blocks: ArchitectureBlockNode[], rules: readonly Rule[]): ArchitectureBlockNode[] {
+function withRuleCounts(blocks: BlockNode[], rules: readonly Rule[]): BlockNode[] {
   const counts = new Map<string, number>();
   for (const rule of rules) {
     if (rule.block !== undefined) counts.set(rule.block, (counts.get(rule.block) ?? 0) + 1);
@@ -427,7 +411,7 @@ const DASHED_CLASS = 'classDef dashed fill:none,stroke-dasharray: 4 4';
 // 렌더링
 // ---------------------------------------------------------------------------
 
-function blockKindLabel(block: ArchitectureBlockNode): string {
+function blockKindLabel(block: BlockNode): string {
   if (block.shared === true) return '공유';
   switch (block.kind) {
     case 'entry':
@@ -445,7 +429,7 @@ function blockKindLabel(block: ArchitectureBlockNode): string {
   }
 }
 
-function l1NodeLabel(block: ArchitectureBlockNode): string {
+function l1NodeLabel(block: BlockNode): string {
   const lines = [block.id];
   const path = block.paths[0]?.replace(/\/?\*\*$/, '/');
   const where = block.kind === 'entry' && path === undefined ? 'Route Handler' : path;

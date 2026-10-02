@@ -5,8 +5,8 @@
  * (work-views 6절 3번 → `result.status: 'failed'`). 이유 세 가지(`view-error` · `missing-info` · `debugging-env`)는 필수다 —
  * 이유 없는 기록은 받지 않는다 (README 2.2 "고르지 않으면 열리지 않는다").
  *
- * `view` · `item`은 공유 타입 `CodeOpenRecord`에서 필수지만, `plumb open <file>:<line>`은 View 밖(셸)에서도 부를 수 있어
- * 둘 다 선택으로 받는다. `item`이 없으면 `file:line` 라벨을 넣고, `view`가 없으면 키를 비운다 — 타입 보완 후보 (PR 본문).
+ * `plumb open <file>:<line>`은 View 밖(셸)에서도 부를 수 있어 `view` · `item`을 선택으로 받는다. `item`이 없으면 `file:line` 라벨을 넣고,
+ * `view`가 없으면 키를 비운다 (`CodeOpenRecord.view?` — #63).
  */
 
 import { z } from 'zod';
@@ -50,7 +50,7 @@ const codeOpenResultSchema = z.union([
     .strict(),
 ]);
 
-/** 저장되는 한 줄. `view`가 선택인 것 외에는 `CodeOpenRecord`와 같다 */
+/** 저장되는 한 줄 — `CodeOpenRecord` */
 export const codeOpenRecordSchema = z
   .object({
     at: z.string().datetime({ offset: true }),
@@ -64,9 +64,6 @@ export const codeOpenRecordSchema = z
     result: codeOpenResultSchema,
   })
   .strict();
-
-/** `code-opens.jsonl` 한 줄. `CodeOpenRecord`에서 `view`만 선택 (셸에서 `plumb open`을 부른 경우) */
-export type StoredCodeOpen = Omit<CodeOpenRecord, 'view'> & { view?: ViewName };
 
 /** `append()` 입력. `at`은 저장소 시계로 채우고, `item`이 없으면 `file:line` */
 export interface CodeOpenInput {
@@ -96,7 +93,7 @@ export async function appendCodeOpen(
   paths: StorePaths,
   input: CodeOpenInput,
   timing: { now?: () => Date } = {},
-): Promise<StoredCodeOpen> {
+): Promise<CodeOpenRecord> {
   if (!isCodeOpenReason(input.reason)) {
     throw new ValidationError(
       `코드 열람 이유(reason)는 ${CODE_OPEN_REASONS.join(' · ')} 중 하나여야 한다 — 고르지 않으면 열리지 않는다`,
@@ -122,11 +119,11 @@ export async function appendCodeOpen(
     throw new ValidationError('코드 열람 기록이 스키마에 맞지 않는다', parsed.error.issues);
   }
   await appendJsonLine(paths.codeOpens, parsed.data);
-  return parsed.data as StoredCodeOpen;
+  return parsed.data as CodeOpenRecord;
 }
 
 /** 전부, 파일 순서(= 시각순). 파일이 없으면 빈 배열. 깨진 줄은 {@link ValidationError} — 조용히 건너뛰지 않는다 */
-export async function listCodeOpens(paths: StorePaths): Promise<StoredCodeOpen[]> {
+export async function listCodeOpens(paths: StorePaths): Promise<CodeOpenRecord[]> {
   const lines = await readJsonLines(paths.codeOpens);
   return lines.map((raw, index) => {
     const parsed = codeOpenRecordSchema.safeParse(raw);
@@ -136,11 +133,11 @@ export async function listCodeOpens(paths: StorePaths): Promise<StoredCodeOpen[]
         parsed.error.issues,
       );
     }
-    return parsed.data as StoredCodeOpen;
+    return parsed.data as CodeOpenRecord;
   });
 }
 
-export function summarizeCodeOpens(records: readonly StoredCodeOpen[]): CodeOpenSummary {
+export function summarizeCodeOpens(records: readonly CodeOpenRecord[]): CodeOpenSummary {
   const summary: CodeOpenSummary = {
     total: records.length,
     byReason: { 'view-error': 0, 'missing-info': 0, 'debugging-env': 0 },

@@ -2,7 +2,6 @@ import {
   type ApiError,
   type CodeOpenInput,
   type CodeOpenReason,
-  type CodeOpenRecord,
   type CodeOpenResponse,
   isCodeOpenReason,
   openInIde,
@@ -115,8 +114,7 @@ export async function POST(request: Request): Promise<NextResponse<CodeOpenRespo
       body.view === undefined
         ? 0
         : await store.codeOpens.count(body.view, (await store.views.read(body.view))?.view.header.generatedAt);
-    // `view`가 없는 기록은 공유 타입(`CodeOpenRecord.view` 필수)보다 느슨하다 — 타입 보완 후보 (PR 본문)
-    return NextResponse.json<CodeOpenResponse>({ record: record as CodeOpenRecord, codeOpens });
+    return NextResponse.json<CodeOpenResponse>({ record, codeOpens });
   } catch (error) {
     if (error instanceof ValidationError) {
       return apiError({ status: 400, code: 'invalid-body', message: error.message });

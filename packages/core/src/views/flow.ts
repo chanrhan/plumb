@@ -3,7 +3,7 @@
  *
  * 입력 둘을 합친다 — 두 안 모두 거친다 (view-flow 4.2 "정적 그래프는 두 안의 공통 재료"):
  * - 파서: **정적 호출 그래프** — 어댑터가 TS 컴파일러 API로 만든 `FlowNode` 트리 (진입점당 하나, `evidence: 'static'`).
- *   `Adapter` 인터페이스에는 이 메서드가 없으므로 어댑터 객체가 {@link CallGraphProvider}를 함께 구현했는지 덕 타이핑으로 본다
+ *   `Adapter.buildCallGraph`는 선택 메서드라 {@link hasCallGraph}로 있는지 본다 (#63 — 전에는 `CallGraphProvider` 덕 타이핑)
  * - 실행: **OTel 스팬** — `adapter.collectTraces()`. 스팬이 있으면 `mode: 'trace'`(A안), 없으면 `mode: 'static'`(B안)으로 전환하고
  *   `fallback`에 적는다 (view-flow 5절 "조용히 A안인 척하지 않는다")
  *
@@ -18,7 +18,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import type { AdapterContext, ToolInfo, TraceResult, TraceSpan } from '../adapter/types.js';
+import type { Adapter, StaticCallGraph, TraceResult, TraceSpan } from '../adapter/types.js';
 import { allCases, type JunitCase, parseJunit, toRootRelative } from '../checks/junit.js';
 import { checkRefsOf } from '../checks/junit-to-results.js';
 import type {
@@ -39,32 +39,14 @@ import { anchorLink, codeSpan, escapeMd, heading, mdTable, mermaid, sourceBar, s
 import { adapterContextOf, type ViewContext, type ViewGenerator } from './types.js';
 
 // ---------------------------------------------------------------------------
-// 정적 호출 그래프 — 어댑터가 만들어 주는 모양 (코어는 어댑터 패키지를 import하지 않는다)
+// 정적 호출 그래프 — `adapter/types.ts` `StaticCallGraph`. `Adapter.buildCallGraph`는 선택 메서드
 // ---------------------------------------------------------------------------
 
-/** 파서: 정적 호출 그래프. 진입점당 `FlowNode` 하나, 모든 노드 `evidence: 'static'` */
-export interface StaticCallGraph {
-  tool: ToolInfo;
-  entries: FlowNode[];
-  /** 노드 ID → `file:line` (스팬 이름을 역조회해 앵커를 붙인다 — 정본은 파서, view-flow 3절) */
-  symbols: Record<string, Anchor>;
-  /** 공개 진입점 노드 ID → 그것을 import하는 테스트 파일 (루트 기준). B안 "참조됨"의 재료 */
-  testRefs: Record<string, string[]>;
-  /** 못 본 것 (동적 import · DI · 핸들러 연결 등). 화면에 그대로 보인다 */
-  warnings: string[];
-}
-
-/** 어댑터가 정적 호출 그래프를 제공하면 구현하는 선택 인터페이스. `nextjsAdapter`가 구현한다 */
-export interface CallGraphProvider {
-  buildCallGraph(ctx: AdapterContext): Promise<StaticCallGraph>;
-}
-
-export function hasCallGraph(adapter: unknown): adapter is CallGraphProvider {
-  return (
-    typeof adapter === 'object' &&
-    adapter !== null &&
-    typeof (adapter as Partial<CallGraphProvider>).buildCallGraph === 'function'
-  );
+/** 어댑터가 정적 호출 그래프(`buildCallGraph`)를 제공하는가 */
+export function hasCallGraph(
+  adapter: Adapter,
+): adapter is Adapter & { buildCallGraph: NonNullable<Adapter['buildCallGraph']> } {
+  return typeof adapter.buildCallGraph === 'function';
 }
 
 /** 테스트가 바꿀 수 있는 입력. 없으면 어댑터 · 파일 시스템에서 읽는다 */

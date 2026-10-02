@@ -7,7 +7,8 @@
  * - (3) 공개 계약의 시그니처 변경은 설계 변경 이벤트 ← git 공개 진입점 diff + 설계 변경 이벤트 (M8). 지금은 `unchecked`
  *
  * 한 행에 결과가 하나도 없으면 `unchecked`, 하나라도 fail · error면 `fail`(위반 목록), 아니면 `pass`.
- * 위반의 `to` · `fromBlock` · `toBlock`은 `CheckFailure`에 없어서 메시지의 `from → to`에서 읽는다. 못 읽으면 빈 문자열 (타입 보완 후보).
+ * 위반의 `to` · `fromBlock` · `toBlock`은 `CheckFailure`에 없어서 메시지의 `from → to`에서 읽는다. 못 읽으면 빈 문자열
+ * (`CheckFailure`에 대상 필드를 두려면 어댑터가 채워 `checks/*.json`에 저장돼야 한다 — M10 후보, #63).
  */
 
 import type { CheckResult, CommonCheckRow, StaticCheckResult, StaticViolation } from '../types/index.js';

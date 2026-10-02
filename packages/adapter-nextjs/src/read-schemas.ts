@@ -36,7 +36,8 @@ import internals from '@prisma/internals';
 import { isMap, isPair, isScalar, isSeq, LineCounter, type Node, parseDocument } from 'yaml';
 
 // ---------------------------------------------------------------------------
-// 타입 — 코어 타입의 상위집합. 더한 필드는 PR의 "타입 보완 후보"
+// 타입 — 결과는 공유 타입(`SchemaSet` · `DbSchema` · `ApiSchema`) 그대로. DMMF `kind` · `relationName` · `documentation`,
+// OpenAPI `tags` · `summary` · 응답 `description` · `components.schemas`는 #63에서 코어 타입의 선택 필드가 됐다
 // ---------------------------------------------------------------------------
 
 /** 계약 파일 종류와 기본 경로 (view-data-contract 머리 · `ContractsConfig`) */
@@ -48,47 +49,8 @@ export const DEFAULT_CONTRACT_PATHS = {
 
 export type ContractKind = keyof typeof DEFAULT_CONTRACT_PATHS;
 
-/** Prisma 필드 + DMMF `kind` · `relationName` (코어 `ModelField`에는 없다) */
-export interface PrismaModelField extends ModelField {
-  kind: 'scalar' | 'object' | 'enum' | 'unsupported';
-  relationName?: string;
-}
-
-/** Prisma 모델 + 문서 주석 */
-export interface PrismaModel extends Model {
-  fields: PrismaModelField[];
-  documentation?: string;
-}
-
-export interface PrismaDbSchema extends DbSchema {
-  models: PrismaModel[];
-}
-
-/** 응답 한 줄 + `description` (코어 타입은 `code` · `schema`만) */
-export interface OpenApiResponse {
-  code: string;
-  schema?: SchemaRef;
-  description?: string;
-}
-
-/** 엔드포인트 + `tags` · `summary`. `block`은 `tags[0]`만 채운다 — 핸들러 import 쪽은 코어가 블록 그래프로 */
-export interface OpenApiOperation extends Operation {
-  tags: string[];
-  summary?: string;
-  responses: OpenApiResponse[];
-}
-
-/** OpenAPI 파싱 결과 + `components.schemas` 전부 (이름 · 필드 요약) */
-export interface OpenApiSchema extends ApiSchema {
-  operations: OpenApiOperation[];
-  schemas: SchemaRef[];
-}
-
-export interface NextjsSchemaSet extends SchemaSet {
-  openapi: SchemaFile<OpenApiSchema>;
-  prisma: SchemaFile<PrismaDbSchema>;
-  asyncapi: SchemaFile<EventSchema>;
-}
+/** 응답 한 줄 (`Operation.responses[]` 항목) */
+type OperationResponse = Operation['responses'][number];
 
 // ---------------------------------------------------------------------------
 // 공통
@@ -207,13 +169,13 @@ export function toDbSchema(
   datamodel: Awaited<ReturnType<typeof internals.getDMMF>>['datamodel'],
   text: string,
   file: string,
-): PrismaDbSchema {
+): DbSchema {
   const finder = new PrismaLineFinder(text);
 
-  const models: PrismaModel[] = datamodel.models.map((m) => {
-    const fields: PrismaModelField[] = m.fields.map((f) => {
+  const models: Model[] = datamodel.models.map((m) => {
+    const fields: ModelField[] = m.fields.map((f) => {
       const at = finder.field('model', m.name, f.name);
-      const field: PrismaModelField = {
+      const field: ModelField = {
         name: f.name,
         type: f.type,
         kind: f.kind,
@@ -229,7 +191,7 @@ export function toDbSchema(
       if (f.relationName !== undefined) field.relationName = f.relationName;
       return field;
     });
-    const model: PrismaModel = { name: m.name, fields, anchor: { file, line: finder.block('model', m.name) } };
+    const model: Model = { name: m.name, fields, anchor: { file, line: finder.block('model', m.name) } };
     if (m.documentation !== undefined) model.documentation = m.documentation;
     return model;
   });
@@ -275,7 +237,7 @@ export function toDbSchema(
 }
 
 /** DMMF 오류 메시지 → 첫 의미 있는 줄 + `schema.prisma:<줄>` */
-function prismaError(path: string, error: unknown): SchemaFile<PrismaDbSchema> {
+function prismaError(path: string, error: unknown): SchemaFile<DbSchema> {
   const text = errorMessage(error);
   const lineMatch = text.match(/-->\s+\S+:(\d+)/);
   const message =
@@ -289,12 +251,12 @@ function prismaError(path: string, error: unknown): SchemaFile<PrismaDbSchema> {
       .find((l) => l.trim().length > 0)
       ?.trim() ??
     '알 수 없는 오류';
-  const out: SchemaFile<PrismaDbSchema> = { path, status: 'error', message };
+  const out: SchemaFile<DbSchema> = { path, status: 'error', message };
   if (lineMatch?.[1] !== undefined) out.line = Number(lineMatch[1]);
   return out;
 }
 
-export async function readPrisma(ctx: AdapterContext, path: string): Promise<SchemaFile<PrismaDbSchema>> {
+export async function readPrisma(ctx: AdapterContext, path: string): Promise<SchemaFile<DbSchema>> {
   const text = await readContract(ctx, path);
   if (text === undefined) return { path, status: 'missing' };
   try {
@@ -400,9 +362,9 @@ function isYamlSeqOrMap(node: unknown): boolean {
 }
 
 /** OpenAPI 문서(JS 객체) + 줄 번호 → 엔드포인트 · 스키마 목록 */
-export function toApiSchema(raw: Record<string, unknown>, file: string, lines: Map<string, number>): OpenApiSchema {
+export function toApiSchema(raw: Record<string, unknown>, file: string, lines: Map<string, number>): ApiSchema {
   const components = isRecord(raw.components) && isRecord(raw.components.schemas) ? raw.components.schemas : {};
-  const operations: OpenApiOperation[] = [];
+  const operations: Operation[] = [];
   const paths = isRecord(raw.paths) ? raw.paths : {};
   for (const [path, item] of Object.entries(paths)) {
     if (!isRecord(item)) continue;
@@ -410,10 +372,10 @@ export function toApiSchema(raw: Record<string, unknown>, file: string, lines: M
       const op = item[method];
       if (!isRecord(op)) continue;
       const tags = Array.isArray(op.tags) ? op.tags.map(String) : [];
-      const responses: OpenApiResponse[] = [];
+      const responses: OperationResponse[] = [];
       if (isRecord(op.responses)) {
         for (const [code, response] of Object.entries(op.responses)) {
-          const entry: OpenApiResponse = { code };
+          const entry: OperationResponse = { code };
           const schema = toSchemaRef(contentSchema(response), components);
           if (schema !== undefined) entry.schema = schema;
           if (isRecord(response) && typeof response.description === 'string') entry.description = response.description;
@@ -421,7 +383,7 @@ export function toApiSchema(raw: Record<string, unknown>, file: string, lines: M
         }
       }
       const upper = method.toUpperCase();
-      const operation: OpenApiOperation = {
+      const operation: Operation = {
         method: upper,
         path,
         tags,
@@ -473,7 +435,7 @@ function parseYamlDocument(
   return { raw, doc, lineCounter };
 }
 
-export async function readOpenApi(ctx: AdapterContext, path: string): Promise<SchemaFile<OpenApiSchema>> {
+export async function readOpenApi(ctx: AdapterContext, path: string): Promise<SchemaFile<ApiSchema>> {
   const text = await readContract(ctx, path);
   if (text === undefined) return { path, status: 'missing' };
   const parsed = parseYamlDocument(path, text);
@@ -553,7 +515,7 @@ export async function readAsyncApi(ctx: AdapterContext, path: string): Promise<S
 // ---------------------------------------------------------------------------
 
 /** 세 계약 파일을 읽는다. 하나가 없거나 깨져도 나머지는 돌려준다 — 항목별 `missing` · `error` */
-export async function readSchemas(ctx: AdapterContext): Promise<NextjsSchemaSet> {
+export async function readSchemas(ctx: AdapterContext): Promise<SchemaSet> {
   const paths = contractPaths(ctx);
   const [openapi, prisma, asyncapi] = await Promise.all([
     readOpenApi(ctx, paths.openapi),

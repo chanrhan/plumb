@@ -20,7 +20,6 @@ import type { Command } from 'commander';
 import { anchorText, describeStatusDetail, NOT_RUN_DETAIL, STATUS_ICON, shortCommit } from '../../checks/run-check.js';
 import type { ParsedPlumbConfig } from '../../config/index.js';
 import {
-  type ApprovalRecord,
   proposalSchema,
   requiresPriorApproval,
   type Store,
@@ -28,6 +27,7 @@ import {
   ValidationError,
 } from '../../store/index.js';
 import type {
+  Approval,
   ApprovalState,
   CheckResult,
   CheckRun,
@@ -93,7 +93,7 @@ export function statusCell(detail: RuleStatusDetail): string {
 }
 
 /** 규칙의 승인 상태. 열린 제안이 있으면 잠정, 아니면 마지막 승인 기록의 행위 */
-export function approvalStateOf(history: ApprovalRecord[], proposals: Proposal[]): ApprovalState | 'unknown' {
+export function approvalStateOf(history: Approval[], proposals: Proposal[]): ApprovalState | 'unknown' {
   const open = proposals.filter(isOpenProposal);
   if (open.length > 0) return 'provisional';
   const last = history.at(-1);

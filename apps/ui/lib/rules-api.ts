@@ -9,10 +9,12 @@
 import {
   type ApiError,
   type ApproveRequest,
+  type ApproveResponse,
   type Proposal,
   ProposalChangedError,
   ProposalNotFoundError,
   type RejectRequest,
+  type RejectResponse,
   RuleNotFoundError,
   RulesParseError,
   RulesValidationError,
@@ -21,7 +23,7 @@ import {
   ValidationError,
 } from '@plumb/core';
 import { NextResponse } from 'next/server';
-import { type ApproveRouteResponse, isRuleId, type RejectRouteResponse, type RuleEntry, readRuleEntry } from './rules';
+import { isRuleId, type RuleEntry, readRuleEntry } from './rules';
 import { getStore } from './store';
 
 /** 승인자 — UI 토큰 세션 (`types/rules.ts` `Approval.by`) */
@@ -126,10 +128,7 @@ async function resolvePending(id: string, proposalId: string): Promise<Resolved 
   return { store, entry, pending: entry.pending };
 }
 
-export async function handleApprove(
-  request: Request,
-  id: string,
-): Promise<NextResponse<ApproveRouteResponse | ApiError>> {
+export async function handleApprove(request: Request, id: string): Promise<NextResponse<ApproveResponse | ApiError>> {
   const body = await parseBody(request);
   if (body instanceof NextResponse) return body;
 
@@ -165,10 +164,7 @@ export async function handleApprove(
   }
 }
 
-export async function handleReject(
-  request: Request,
-  id: string,
-): Promise<NextResponse<RejectRouteResponse | ApiError>> {
+export async function handleReject(request: Request, id: string): Promise<NextResponse<RejectResponse | ApiError>> {
   const body = await parseBody(request);
   if (body instanceof NextResponse) return body;
 

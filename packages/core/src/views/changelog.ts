@@ -341,7 +341,7 @@ function rangeLabel(view: ChangelogView): string {
 }
 
 function manualCount(view: ChangelogView): number {
-  return view.groups.flatMap((g) => g.events).filter((e) => e.session === 'manual').length;
+  return view.groups.flatMap((g) => g.events).filter((e) => e.session === 'manual' || e.session === null).length;
 }
 
 function summaryLine(view: ChangelogView): string {
@@ -380,8 +380,9 @@ function decisionCell(event: ChangeEvent): string {
   return links.length === 0 ? `🔺 **사유 없음** (${reason})` : `${links} · 🔺 **사유 없음** (${reason})`;
 }
 
+/** 사람 커밋은 `'manual'`(현재 감지기) 또는 `null`(세션 정보 없음) — 둘 다 "수동" */
 function sessionCell(session: ChangeEvent['session']): string {
-  return session === 'manual' ? '수동' : codeSpan(session);
+  return session === 'manual' || session === null ? '수동' : codeSpan(session);
 }
 
 function blocksCell(event: ChangeEvent): string {
@@ -424,7 +425,7 @@ function ruleCell(rule: ChangeEvent['linkedRules'][number]): string {
 
 /**
  * 연결된 결정 기록 — JSON에 있는 것만 그린다: 어느 이벤트에 붙었나 · 연결 규칙과 상태 점 · 이유가 비었나. 본문 네 절은 저장소
- * `decisions/<id>.md`가 정본이고 `ChangelogView`에 자리가 없다 (PR "타입 보완 후보"). 요약해서 대신 쓰지 않는다
+ * `decisions/<id>.md`가 정본이고 `ChangelogView`에 자리가 없다 (`decisions?: DecisionRecord[]`는 생성기 변경이라 M10 후보, #63). 요약해서 대신 쓰지 않는다
  */
 function renderDecisions(view: ChangelogView): string[] {
   const out = [heading(2, '결정 기록')];

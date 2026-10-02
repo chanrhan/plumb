@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import {
   type ApiError,
   type Approval,
+  type ApproveResponse,
   type CheckFailure,
   type CheckRef,
   hashProposal,
@@ -18,12 +19,12 @@ import {
   openStore,
   type Proposal,
   type Rule,
+  type RuleDetailResponse,
   type RuleListResponse,
   type Store,
 } from '@plumb/core';
 import { NextRequest } from 'next/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { ApproveRouteResponse, RuleDetail } from '@/lib/rules';
 
 const REFUND_CHECK: CheckRef = { kind: 'acceptance', ref: 'test/acceptance/refund-window.property.spec.ts' };
 
@@ -146,7 +147,7 @@ describe('규칙 API — 목록 → 제안 → 승인 → 기각 오류 → 404'
 
     const res = await routes.detail.GET(get('/api/rules/pay.refund-window'), ctx('pay.refund-window'));
     expect(res.status).toBe(200);
-    const detail = (await res.json()) as RuleDetail;
+    const detail = (await res.json()) as RuleDetailResponse;
     expect(detail.rule).toBeUndefined(); // 승인 전까지 rules.yaml에 없다
     expect(detail.approval).toBe('provisional');
     expect(detail.proposal?.id).toBe('p-0001');
@@ -193,7 +194,7 @@ describe('규칙 API — 목록 → 제안 → 승인 → 기각 오류 → 404'
       ctx('pay.refund-window'),
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as ApproveRouteResponse;
+    const body = (await res.json()) as ApproveResponse;
     expect(body.requiresPriorApproval).toBe(false);
     if (body.requiresPriorApproval) throw new Error('unreachable');
     expect(body.approvalState).toBe('approved');
@@ -214,7 +215,7 @@ describe('규칙 API — 목록 → 제안 → 승인 → 기각 오류 → 404'
 
     const detail = (await (
       await routes.detail.GET(get('/api/rules/pay.refund-window'), ctx('pay.refund-window'))
-    ).json()) as RuleDetail;
+    ).json()) as RuleDetailResponse;
     expect(detail.rule).toEqual(REFUND_RULE);
     expect(detail.approval).toBe('approved');
     expect(detail.proposal).toBeUndefined();
@@ -265,7 +266,7 @@ describe('규칙 API — 목록 → 제안 → 승인 → 기각 오류 → 404'
 
     const detail = (await (
       await routes.detail.GET(get('/api/rules/pay.refund-window'), ctx('pay.refund-window'))
-    ).json()) as RuleDetail;
+    ).json()) as RuleDetailResponse;
     expect(detail.status).toEqual({ status: 'fail', failures: [REFUND_FAILURE] });
     expect(detail.statusAt).toEqual({ commit: CHECK_COMMIT, checkedAt: CHECKED_AT });
     expect(detail.history).toEqual(['unchecked', 'fail']);
@@ -307,7 +308,7 @@ describe('규칙 API — 목록 → 제안 → 승인 → 기각 오류 → 404'
 
     const detail = (await (
       await routes.detail.GET(get('/api/rules/pay.refund-window'), ctx('pay.refund-window'))
-    ).json()) as RuleDetail;
+    ).json()) as RuleDetailResponse;
     expect(detail.approval).toBe('provisional');
     expect(detail.diff.filter((line) => line.op === '-').map((line) => line.field)).toEqual(['statement']);
     expect(detail.diff.filter((line) => line.op === '+').map((line) => line.field)).toEqual(['statement']);

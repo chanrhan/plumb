@@ -13,8 +13,8 @@
  *   ⑤ `CheckRun` 조립 → `store.checks.write`. **JUnit 결과가 있을 때만** `store.ruleStatus.write` — 러너가 죽었으면(`junitPath: null`)
  *      이전 성공 결과를 건드리지 않고 `runner.exitCode` · `stderrTail`만 기록한다 (view-verification 5절 "plumb check 실패")
  *
- * 블록 그래프를 못 얻으면 "규칙 0개 블록" · "미분류 파일"은 0이 아니라 **측정 불가**다. `OutOfScope` 타입이 그 표현을 허용하지 않아
- * 빈 값 + {@link RunCheckResult.graphUnavailable}로 돌려준다 (타입 보완 후보 — PR 본문).
+ * 블록 그래프를 못 얻으면 "규칙 0개 블록" · "미분류 파일"은 0이 아니라 **측정 불가**다 — `OutOfScope`의 두 값에
+ * `{ unavailable: 'no-graph' }`를 넣고 사유는 {@link RunCheckResult.graphUnavailable}에 적는다 (#63).
  * 3회 실행 격리(§7.5)는 M10 `--stability` — 지금은 `quarantined: []`.
  */
 
@@ -22,12 +22,18 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import type { Adapter, AdapterContext, BlockGraph, TestRunResult, ToolInfo } from '../adapter/types.js';
+import type {
+  Adapter,
+  AdapterContext,
+  BlockGraph,
+  StaticCheckRun,
+  StaticRunner,
+  TestRunResult,
+} from '../adapter/types.js';
 import type { Store, StoreStatus } from '../store/index.js';
 import type {
   Anchor,
   ApprovalState,
-  CapturedOutput,
   CheckKindLabel,
   CheckResult,
   CheckRun,
@@ -48,22 +54,8 @@ import { computeOutOfScope } from './out-of-scope.js';
 import { approvalStatesFrom, computeRuleStatuses } from './status.js';
 
 // ---------------------------------------------------------------------------
-// 타입
+// 타입 — 정적 검사 결과 · 러너(`StaticCheckRun` · `StaticRunner`)는 `adapter/types.ts`
 // ---------------------------------------------------------------------------
-
-/**
- * 정적 검사 실행 결과 — `@plumb/adapter-nextjs`의 `StaticCheckRun`과 같은 모양 (구조적 타입. 코어는 어댑터 패키지를 import하지 않는다).
- * `results`는 규칙 하나당 `CheckResult` 하나 (`check.kind: 'static'`, `ref: 'depcruise:<규칙>'`).
- */
-export interface StaticCheckRun {
-  results: CheckResult[];
-  output: CapturedOutput;
-  /** dependency-cruiser JSON 경로. 안 생겼으면 `null` */
-  graphJsonPath: string | null;
-  tool: ToolInfo;
-}
-
-export type StaticRunner = (ctx: AdapterContext) => Promise<StaticCheckRun>;
 
 export interface RunCheckDeps {
   config: PlumbConfig;
@@ -93,7 +85,7 @@ export interface RunCheckResult {
   /** `statuses`가 이전 실행의 것일 때. `previousCommit`은 이전 기록 중 가장 최근 커밋 (없으면 `null`) */
   stale: { exitCode: number; stderrTail: string[]; previousCommit: string | null } | null;
   outOfScope: OutOfScope;
-  /** 블록 그래프를 못 얻었다 → "규칙 0개 블록" · "미분류 파일"은 측정 불가 (`outOfScope`의 두 값은 빈 값) */
+  /** 블록 그래프를 못 얻은 사유 → `outOfScope`의 "규칙 0개 블록" · "미분류 파일"은 `{ unavailable: 'no-graph' }` */
   graphUnavailable: { reason: string } | null;
   common: CommonCheckRow[];
   /** 어느 규칙의 `checks[]`에도 없는 testcase (단위 테스트 — 규칙 근거 아님, §8.2) */
@@ -237,15 +229,16 @@ function latestCommitOf(records: Iterable<RuleStatusRecord>): string | null {
 }
 
 /** 블록 그래프가 없을 때의 범위 밖 — 두 항목은 빈 값이고 호출자가 "측정 불가"로 그린다 */
+/** 블록 그래프 없음 — 파서에서 나오는 두 값은 측정 불가 (§12. 0이라고 쓰지 않는다) */
 function outOfScopeWithoutGraph(statuses: RuleStatusRecord[]): OutOfScope {
   return {
-    blocksWithoutRules: [],
+    blocksWithoutRules: { unavailable: 'no-graph' },
     codeWithoutRules: [],
     rulesWithoutCode: statuses
       .filter((record) => record.detail.status === 'unchecked' && record.detail.reason === 'check-missing')
       .map((record) => ({ ruleId: record.ruleId, reason: 'check-missing' as const })),
     untestedFlows: { unavailable: 'no-trace' },
-    unclassifiedFiles: 0,
+    unclassifiedFiles: { unavailable: 'no-graph' },
     quarantined: [],
   };
 }

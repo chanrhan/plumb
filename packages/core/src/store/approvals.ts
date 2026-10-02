@@ -8,7 +8,7 @@
  * `reject()`: 사유 필수. jsonl에 `action: 'reject'` 한 줄, 제안 파일 `applied: 'rejected'`. `rules.yaml`은 손대지 않고 기각 줄에는
  * `rulesHash`를 적지 않는다 — 변조된 파일의 해시를 기각이 "확인"해 주면 안 되기 때문이다.
  *
- * jsonl 한 줄은 {@link Approval}에 `rulesHash` · `note`를 더한 {@link ApprovalRecord}. 두 필드는 공유 타입에 없다 (PR 본문 "타입 보완 후보").
+ * jsonl 한 줄은 공유 타입 {@link Approval} 그대로 — `rulesHash`(승인 줄만) · `note`는 #63에서 타입에 들어갔다.
  */
 
 import type { Approval, PlumbConfig, Proposal, ProposalId, Rule, RuleId } from '../types/index.js';
@@ -17,13 +17,6 @@ import { appendJsonLine, listFiles, readJsonLines } from './fs.js';
 import type { StorePaths } from './paths.js';
 import { getProposal, hashProposal, updateProposal } from './proposals.js';
 import { readRulesFile, writeRules } from './rules.js';
-
-/** `approvals/<ruleId>.jsonl` 한 줄. `rulesHash`는 승인 줄에만 (반영 후 `rules.yaml`의 sha256) */
-export interface ApprovalRecord extends Approval {
-  rulesHash?: string;
-  /** 승인 메모 (선택) */
-  note?: string;
-}
 
 /** 고위험 판정에 쓰는 설정 부분 (`blocks.<id>.risk`) */
 export type ApprovalConfig = Pick<PlumbConfig, 'blocks'>;
@@ -51,7 +44,7 @@ export type ApproveResult =
   | {
       applied: true;
       requiresPriorApproval: false;
-      approval: ApprovalRecord;
+      approval: Approval;
       /** 반영 후 `rules.yaml`의 sha256 (= `approval.rulesHash`) */
       rulesHash: string;
       /** 반영된 규칙. 삭제면 null */
@@ -66,7 +59,7 @@ export type ApproveResult =
     };
 
 export interface RejectResult {
-  approval: ApprovalRecord;
+  approval: Approval;
   proposal: Proposal;
 }
 
@@ -154,7 +147,7 @@ export async function approve(
   const next = applyProposal(current.rules, proposal);
   const rulesHash = await writeRules(paths, next);
 
-  const approval: ApprovalRecord = {
+  const approval: Approval = {
     ruleId: proposal.ruleId,
     proposalId: proposal.id,
     action: 'approve',
@@ -181,7 +174,7 @@ export async function reject(
   }
   const { proposal, proposalHash } = await loadPending(paths, input);
 
-  const approval: ApprovalRecord = {
+  const approval: Approval = {
     ruleId: proposal.ruleId,
     proposalId: proposal.id,
     action: 'reject',
@@ -196,27 +189,27 @@ export async function reject(
   return { approval, proposal: updated };
 }
 
-function parseApprovalLine(raw: unknown, where: string): ApprovalRecord {
+function parseApprovalLine(raw: unknown, where: string): Approval {
   if (typeof raw !== 'object' || raw === null) throw new ValidationError(`${where}: 승인 기록 줄이 객체가 아니다`);
-  const record = raw as Partial<ApprovalRecord>;
+  const record = raw as Partial<Approval>;
   if (typeof record.ruleId !== 'string' || typeof record.proposalId !== 'string' || typeof record.at !== 'string') {
     throw new ValidationError(`${where}: 승인 기록 줄에 ruleId · proposalId · at이 없다`);
   }
   if (record.action !== 'propose' && record.action !== 'approve' && record.action !== 'reject') {
     throw new ValidationError(`${where}: 승인 기록 줄의 action이 propose · approve · reject 중 하나가 아니다`);
   }
-  return record as ApprovalRecord;
+  return record as Approval;
 }
 
 /** 규칙 하나의 승인 이력 (파일 순서 = 시간 순서). 없으면 빈 배열 */
-export async function listApprovals(paths: StorePaths, ruleId: RuleId): Promise<ApprovalRecord[]> {
+export async function listApprovals(paths: StorePaths, ruleId: RuleId): Promise<Approval[]> {
   const path = paths.approvals(ruleId);
   return (await readJsonLines(path)).map((line) => parseApprovalLine(line, path));
 }
 
 /** 모든 규칙의 승인 이력. `status()`가 마지막 승인의 해시를 찾는 데 쓴다 */
-export async function listAllApprovals(paths: StorePaths): Promise<ApprovalRecord[]> {
-  const records: ApprovalRecord[] = [];
+export async function listAllApprovals(paths: StorePaths): Promise<Approval[]> {
+  const records: Approval[] = [];
   for (const file of await listFiles(paths.approvalsDir, '.jsonl')) {
     const path = `${paths.approvalsDir}/${file}`;
     for (const line of await readJsonLines(path)) records.push(parseApprovalLine(line, path));

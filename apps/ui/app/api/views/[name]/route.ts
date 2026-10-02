@@ -6,8 +6,8 @@ export const dynamic = 'force-dynamic';
 
 type Context = { params: Promise<{ name: string }> };
 
-/** 404 본문. `code`는 `types/api.ts` 그대로(`view-not-found`), 두 경우를 `reason`으로 가른다 (탭 비활성 vs 생성기 미구현 안내) */
-export type ViewNotFoundBody = Extract<ApiError, { status: 404 }> & { reason: 'unknown-view' | 'not-generated' };
+/** 404 본문. `code`는 `view-not-found`, 두 경우를 `reason`으로 가른다 (탭 비활성 vs 생성기 미구현 안내) — `ApiError` 404 변형 그대로 (#63) */
+export type ViewNotFoundBody = Extract<ApiError, { status: 404 }>;
 
 /**
  * `GET /api/views/:name` — View 하나: 머리말 · Markdown(Mermaid 포함) · 정본 JSON · `stale`(HEAD와 다름) · 열람 수 (README 3.3, work-views 3절).

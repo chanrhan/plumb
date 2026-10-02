@@ -17,14 +17,6 @@ import { decisionIdSchema } from './rules.js';
 /** 내용 SHA-256 (16진 64자) */
 export const CONTRACT_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
-/**
- * 저장되는 기록. `ContractApproval` + 승인자 `by` (UI 토큰 세션이면 `ui`, CLI면 OS 사용자 이름 — `approvals.jsonl`과 같은 규약).
- * `by`는 공유 타입에 없다 — 타입 보완 후보 (PR에 적는다).
- */
-export interface ContractApprovalRecord extends ContractApproval {
-  by: string;
-}
-
 export interface ApproveContractInput {
   /** 계약 파일의 레포 상대 경로 (`prisma/schema.prisma` · `openapi.yaml`). 앞의 `./`는 뗀다 */
   path: string;
@@ -49,7 +41,7 @@ export const contractApprovalSchema = z
     commit: z.string().min(1),
     by: z.string().min(1),
   })
-  .strict() satisfies z.ZodType<ContractApprovalRecord, z.ZodTypeDef, unknown>;
+  .strict() satisfies z.ZodType<ContractApproval, z.ZodTypeDef, unknown>;
 
 const approveInputSchema = z
   .object({
@@ -66,7 +58,7 @@ export function normalizeContractPath(path: string): string {
   return path.replace(/^\.?\//, '').replace(/\\/g, '/');
 }
 
-function parseRecord(raw: unknown, where: string): ContractApprovalRecord {
+function parseRecord(raw: unknown, where: string): ContractApproval {
   const result = contractApprovalSchema.safeParse(raw);
   if (!result.success) {
     throw new ValidationError(`${where}: 계약 해시 기록이 스키마에 맞지 않는다`, result.error.issues);
@@ -78,15 +70,15 @@ function parseRecord(raw: unknown, where: string): ContractApprovalRecord {
 export async function getContractApproval(
   paths: StorePaths,
   contractPath: string,
-): Promise<ContractApprovalRecord | undefined> {
+): Promise<ContractApproval | undefined> {
   const file = paths.contract(normalizeContractPath(contractPath));
   const raw = await readJsonFile(file);
   return raw === undefined ? undefined : parseRecord(raw, file);
 }
 
 /** 기록 전부, 계약 파일 경로순. 폴더가 없으면 빈 배열 */
-export async function listContractApprovals(paths: StorePaths): Promise<ContractApprovalRecord[]> {
-  const records: ContractApprovalRecord[] = [];
+export async function listContractApprovals(paths: StorePaths): Promise<ContractApproval[]> {
+  const records: ContractApproval[] = [];
   for (const file of await listFiles(paths.contractsDir, '.json')) {
     const full = `${paths.contractsDir}/${file}`;
     const raw = await readJsonFile(full);
@@ -104,14 +96,14 @@ export async function approveContract(
   paths: StorePaths,
   input: ApproveContractInput,
   options: ContractStoreOptions = {},
-): Promise<ContractApprovalRecord> {
+): Promise<ContractApproval> {
   const parsed = approveInputSchema.safeParse(input);
   if (!parsed.success) {
     throw new ValidationError('contracts.approve: 입력이 스키마에 맞지 않는다', parsed.error.issues);
   }
   const now = options.now ?? (() => new Date());
   const path = normalizeContractPath(parsed.data.path);
-  const record: ContractApprovalRecord = {
+  const record: ContractApproval = {
     path,
     hash: parsed.data.hash,
     approvedAt: now().toISOString(),

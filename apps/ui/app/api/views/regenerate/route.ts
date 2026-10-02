@@ -1,18 +1,8 @@
 import type { ApiError, RegenerateViewsResponse, ViewName } from '@plumb/core';
 import { NextResponse } from 'next/server';
-import {
-  isViewName,
-  RegenerateInProgressError,
-  type RegenerateOutcome,
-  RegenerateSpawnError,
-  regenerateViews,
-  VIEW_NAMES,
-} from '@/lib/views';
+import { isViewName, RegenerateInProgressError, RegenerateSpawnError, regenerateViews, VIEW_NAMES } from '@/lib/views';
 
 export const dynamic = 'force-dynamic';
-
-/** 200 본문. 공유 타입 `RegenerateViewsResponse`(`started: true` · `names`)에 **끝난 결과**를 더했다 — 동기적으로 기다리므로 (타입 보완 후보) */
-export type RegenerateRouteResponse = RegenerateViewsResponse & Omit<RegenerateOutcome, 'names'>;
 
 function apiError(error: ApiError): NextResponse<ApiError> {
   return NextResponse.json(error, { status: error.status });
@@ -23,7 +13,7 @@ function apiError(error: ApiError): NextResponse<ApiError> {
  * **끝날 때까지 기다린다**(5분, `lib/views.ts`). 진행 중이면 409 `regenerate-in-progress` · 알 수 없는 이름 404 · 프로세스 실패 500 `spawn-failed`.
  * 생성기 하나가 실패한 것은 오류가 아니라 `views[]` 행에 보인다 (화면이 표로 그린다).
  */
-export async function POST(request: Request): Promise<NextResponse<RegenerateRouteResponse | ApiError>> {
+export async function POST(request: Request): Promise<NextResponse<RegenerateViewsResponse | ApiError>> {
   let names: ViewName[] = [];
   const text = await request.text();
   if (text.trim().length > 0) {
@@ -56,7 +46,7 @@ export async function POST(request: Request): Promise<NextResponse<RegenerateRou
   try {
     const outcome = await regenerateViews(names);
     const { names: _names, ...rest } = outcome;
-    return NextResponse.json<RegenerateRouteResponse>({ started: true, names, ...rest });
+    return NextResponse.json<RegenerateViewsResponse>({ started: true, names, ...rest });
   } catch (error) {
     if (error instanceof RegenerateInProgressError) {
       return apiError({ status: 409, code: 'regenerate-in-progress', message: error.message });

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type StorePaths, storePaths } from '../../store/index.js';
-import type { DecisionDocument } from '../format.js';
+import type { DecisionRecord } from '../../types/index.js';
 
 /** 레포의 `examples/testbed/plumb/decisions/D-0001.md` — 첫 슬라이스 예시 (이슈 #35) */
 export const EXAMPLE_DECISION_PATH = resolve(
@@ -12,7 +12,7 @@ export const EXAMPLE_DECISION_PATH = resolve(
 );
 
 /** 기획안 §6.2 예시 D-0031을 이 형식으로 옮긴 것. 세션 ID는 `RunId`(`r-…`) */
-export const REDIS_DECISION: DecisionDocument = {
+export const REDIS_DECISION: DecisionRecord = {
   id: 'D-0031',
   title: '세션 저장소로 redis 도입',
   block: 'auth',

@@ -1,5 +1,7 @@
 # M0 타입 초안 — 결정 메모
 
+> **정본은 `packages/core/src/types`다.** 이 폴더의 `*.ts`는 M0 산출물(#5) 그대로 두며, M3~M8 구현에서 나온 보완은 #63에서 `packages/core/src/types/**`에만 반영했다 (아래 5절).
+
 이슈 #5의 산출물. `docs/screens/*.md`(#1~#4)의 **3절 항목 표**를 타입으로 옮기고, 각 문서 **6절 열린 질문** 중 타입에 영향을 주는 것을 여기서 하나씩 정했다. M1 #6에서 `packages/core/src/types/`로 이식되며, 그 뒤로는 공유 타입 변경 규칙(CONTRIBUTING 2.1)을 따른다.
 
 | 파일 | 내용 |
@@ -161,3 +163,18 @@
 7. 결정 기록의 연결은 커밋·규칙·패키지로, 이벤트 ID는 도구가 채움 (view-changelog 2)
 
 이 일곱은 CLAUDE.md "되돌리기 비싼 결정은 결정 이슈로"에 해당한다. 이 PR은 타입에 기본값을 둔 것이고, 반대가 있으면 M3 시작 전에 결정 이슈로 연다.
+
+## 5. #63 보완 — 저장 형식에 닿은 항목의 결정 메모
+
+M3~M8 PR들의 "타입 보완 후보"를 #63에서 한 번에 반영했다. 4절의 7건은 바꾸지 않았다(#17 대기). 아래는 그중 저장되는 JSON · jsonl · Markdown의 모양이 타입과 함께 바뀐(또는 이미 그렇게 쓰이고 있던 것을 타입이 뒤늦게 담은) 항목이다. 전부 선택 필드 추가이거나 "측정 불가" 표현이라 기존 파일은 그대로 읽힌다.
+
+| 항목 | 결정 | 출처 |
+|---|---|---|
+| `approvals/<ruleId>.jsonl` 줄 | `Approval`에 `rulesHash?`(승인 줄의 반영 후 `rules.yaml` sha256) · `note?`. 기각 줄에는 `rulesHash`를 쓰지 않는다. `action: 'propose'`는 읽기만 허용 — 코어는 제안 줄을 쓰지 않는다 (§10) | #38 |
+| `contracts/<파일>.json` | `ContractApproval.by`(승인자) 필수. 저장소가 처음부터 요구하던 값이다 | #66 |
+| `code-opens.jsonl` 줄 | `CodeOpenRecord.view?` 선택 — `plumb open <file>:<line>`은 View 밖(셸)에서도 부른다. `item`은 저장 시 `file:line`으로 채운다 | #71 |
+| `decisions/D-xxxx.md` | `DecisionRecord.links.events?` 선택(도구가 채우는 값이라 비어 있으면 쓰지 않는다) · `extra?`(모르는 `## 절` 보존). 필드 이름 `date`↔front matter `at`, `accepted`↔절 `tradeoff`는 **그대로** — View JSON(`orphanDecisions`)의 키가 바뀌므로 보류 | #39 |
+| `views/verification.json` · `plumb check --json` | `OutOfScope.blocksWithoutRules` · `unclassifiedFiles`에 `{ unavailable: 'no-graph' }` 변형. 블록 그래프를 못 얻으면 `[]` · `0`이 아니라 측정 불가로 쓴다 (§12, `untestedFlows`와 같은 모양). `VerificationView.staleResult.previousCommit`은 이전 기록이 없으면 `''`가 아니라 `null` | #62 #68 |
+| 블록 그래프 JSON (`BlockGraph`) | `BlockNode.declared? · risk? · shared? · rules?`, `BlockEdge.declaredBy?`, `BlockGraph.externals? · reusedReport?` — 어댑터가 이미 쓰던 필드를 공통 형식에 올렸다. `BlockKind`에 `'shared'`를 더했지만 어댑터는 아직 `kind: 'domain' + shared: true`로 쓴다(값 변경은 별도) | #50 #65 |
+| `CheckRun.runner.exitCode` | `-1`(프로세스가 안 돌았다 · 시그널) · `127`(러너 없음) 관례를 주석으로만 적었다. `number \| null`로 바꾸는 것은 저장 형식 결정이라 보류 | #49 #62 |
+

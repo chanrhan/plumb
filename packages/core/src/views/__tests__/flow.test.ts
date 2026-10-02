@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Adapter, TraceResult, TraceSpan } from '../../adapter/index.js';
+import type { Adapter, StaticCallGraph, TraceResult, TraceSpan } from '../../adapter/index.js';
 import { makeTempStore, REFUND_RULE, type TempStore } from '../../store/__tests__/fixtures.js';
 import type { CheckRun, FlowNode, FlowView, PlumbConfig, RuleStatusRecord } from '../../types/index.js';
 import {
@@ -21,7 +21,6 @@ import {
   overlayStatic,
   parseEntryId,
   renderFlow,
-  type StaticCallGraph,
   scenarioMermaid,
   spanForestToNodes,
   spanTestId,

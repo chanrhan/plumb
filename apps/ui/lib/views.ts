@@ -13,9 +13,9 @@ import { join, resolve } from 'node:path';
 import {
   gitHead,
   isViewName,
+  type RegenerateViewResult,
   VIEW_NAMES,
   VIEW_PLANNED_IN,
-  type ViewGenerationResult,
   type ViewHeader,
   type ViewListItem,
   type ViewName,
@@ -100,10 +100,11 @@ export class RegenerateSpawnError extends Error {
   }
 }
 
+/** `RegenerateViewsResponse`의 결과 부분 — `plumb views --json` 출력 그대로 */
 export interface RegenerateOutcome {
   names: ViewName[];
   /** `plumb views --json`의 결과 행 (cause 없음) */
-  views: Array<Omit<ViewGenerationResult, 'cause'>>;
+  views: RegenerateViewResult[];
   exitCode: number;
   commit?: string;
 }

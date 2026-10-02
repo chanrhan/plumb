@@ -6,8 +6,7 @@
  * 입력으로 받고, 결과 JSON(`views/<name>.json`)이 정본이며 Markdown은 그 렌더링이다 (docs/types/README.md 결정 1).
  */
 
-import type { Adapter, AdapterContext } from '../adapter/index.js';
-import type { StaticRunner } from '../checks/run-check.js';
+import type { Adapter, AdapterContext, StaticRunner } from '../adapter/index.js';
 import type { Store } from '../store/index.js';
 import type { PlumbConfig, View, ViewName } from '../types/index.js';
 
@@ -24,9 +23,6 @@ export const VIEW_NAMES: readonly ViewName[] = [
 export function isViewName(value: unknown): value is ViewName {
   return typeof value === 'string' && (VIEW_NAMES as readonly string[]).includes(value);
 }
-
-/** 정적 검사 실행 결과와 러너. 정본은 `checks/run-check.ts`(#47) — 코어는 어댑터 패키지를 import하지 않는다 */
-export type { StaticCheckRun as StaticCheckRunLike, StaticRunner } from '../checks/run-check.js';
 
 /**
  * 모든 View 생성기의 입력. `run-check.ts`(#47)의 `runCheck({ config, root, store, adapter, now, commit })`와 같은 의존 주입 모양이라

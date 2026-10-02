@@ -13,7 +13,7 @@
  *   `rule list`(#32 `collectRows`)와 같은 합집합이다
  * - "검사 범위 밖"은 **생략할 수 없다**(§6.3 "15/15 통과가 의미를 가지려면 15가 무엇의 15인지 보여야 한다"). `CheckRun`에는 범위 밖이
  *   저장되지 않으므로 다시 계산한다. 블록 그래프가 없으니 "규칙 0개 블록"은 `config.blocks` 키 − 규칙 `block` 집합이고, "미분류 파일"은
- *   측정 불가다 — `OutOfScope.unclassifiedFiles`가 숫자뿐이라 0을 넣고, 렌더는 머리말에 `parser` 출처가 없으면 "측정 불가"로 그린다
+ *   측정 불가 `{ unavailable: 'no-graph' }`다 (#63 — 전에는 0을 넣고 렌더가 머리말 출처로 가렸다)
  * - `staleResult`: 마지막 `CheckRun`의 러너가 실패했고(`runner.exitCode !== 0`) JUnit 결과가 없으면 — `rule-status/`는 이전 결과
  *   그대로이므로(run-check ⑤) 그 커밋을 `previousCommit`에 적고 행마다 "(이전 결과 …)"를 붙인다 (view-verification 5절)
  * - 유효성(§7.4)은 M7 위반 주입 전까지 기록이 없다 → `validity` 없음 → 🟡 행은 "유효성 미확인 (주입 기록 없음)"
@@ -35,8 +35,8 @@ import {
 import { approvalStatesFrom, missingCheckFiles, resultsForRule } from '../checks/status.js';
 import { COMMON_BLOCK_ID, computeBlockSummaries, computeStatusCounts, STATUS_SEVERITY } from '../checks/summary.js';
 import { decisionsForRule } from '../decisions/store.js';
-import type { ApprovalRecord } from '../store/approvals.js';
 import type {
+  Approval,
   CheckRun,
   CommonCheckRow,
   Grade,
@@ -155,7 +155,7 @@ function isOpenProposal(proposal: Proposal): boolean {
   return proposal.applied === 'provisional' || proposal.applied === 'pending';
 }
 
-/** 마지막 `CheckRun`에 JUnit 결과가 없었나 — `counts.junit`이 0이고 결과가 전부 정적이면. `CheckRun`에 `junitMissing` 필드가 없다 (타입 보완 후보) */
+/** 마지막 `CheckRun`에 JUnit 결과가 없었나 — `counts.junit`이 0이고 결과가 전부 정적이면 (`CheckRun`에 `junitMissing`을 저장하는 것은 저장 형식 결정이라 #63에서 보류) */
 export function junitMissingOf(run: CheckRun): boolean {
   return run.counts.junit === 0 && run.results.every((result) => result.check.kind === 'static');
 }
@@ -169,13 +169,13 @@ function lastCheckOf(run: CheckRun): LastCheck {
   return { runId: run.runId, commit: run.commit, finishedAt: run.finishedAt };
 }
 
-/** 이전 기록 중 가장 최근 `checkedAt`의 커밋. 없으면 빈 문자열 (타입이 `string`이라 `null`을 못 적는다 — 타입 보완 후보) */
-function latestCommitOf(records: Iterable<RuleStatusRecord>): string {
+/** 이전 기록 중 가장 최근 `checkedAt`의 커밋. 기록이 하나도 없으면 `null` */
+function latestCommitOf(records: Iterable<RuleStatusRecord>): string | null {
   let latest: RuleStatusRecord | null = null;
   for (const record of records) {
     if (latest === null || record.checkedAt.localeCompare(latest.checkedAt) > 0) latest = record;
   }
-  return latest === null ? '' : latest.commit;
+  return latest === null ? null : latest.commit;
 }
 
 /** 검사 종류 → 등급 (기획안 §7.2 · rules.ts `GradeOfCheckKind`). 여럿이면 가장 약한 쪽. 검사가 없으면 없음 */
@@ -185,8 +185,8 @@ function gradeOf(rule: Rule): Grade | undefined {
 }
 
 /** 규칙별 마지막 `approve` 줄 */
-function latestApprovalOf(history: ApprovalRecord[]): ApprovalRecord | undefined {
-  let latest: ApprovalRecord | undefined;
+function latestApprovalOf(history: Approval[]): Approval | undefined {
+  let latest: Approval | undefined;
   for (const record of history) {
     if (record.action !== 'approve') continue;
     if (latest === undefined || record.at.localeCompare(latest.at) >= 0) latest = record;
@@ -200,7 +200,7 @@ interface RowInput {
   inRules: boolean;
   record: RuleStatusRecord | undefined;
   openProposal: Proposal | undefined;
-  history: ApprovalRecord[];
+  history: Approval[];
   decision: RuleRow['decision'];
   latestRun: CheckRun | null;
   fileExists: (relPath: string) => boolean;
@@ -295,7 +295,7 @@ export async function generateVerificationView(ctx: ViewContext): Promise<Verifi
 
   // 규칙 합집합: rules.yaml + 열린 제안만 있는 규칙 (잠정) — `rule list`와 같다
   const ruleIds = new Set<RuleId>([...rules.map((rule) => rule.id), ...proposals.map((p) => p.ruleId)]);
-  const histories = new Map<RuleId, ApprovalRecord[]>();
+  const histories = new Map<RuleId, Approval[]>();
   for (const id of ruleIds) histories.set(id, await store.approvals.history(id));
   const approvalStates = approvalStatesFrom([...histories.values()].flat());
 
@@ -354,7 +354,8 @@ export async function generateVerificationView(ctx: ViewContext): Promise<Verifi
       .filter((row) => row.detail.status === 'unchecked' && row.detail.reason === 'check-missing')
       .map((row) => ({ ruleId: row.ruleId, reason: 'check-missing' as const })),
     untestedFlows: { unavailable: 'no-trace' },
-    unclassifiedFiles: 0,
+    // 이 생성기는 블록 그래프를 읽지 않는다 — 미분류 파일 수는 측정 불가 (0이 아니다)
+    unclassifiedFiles: { unavailable: 'no-graph' },
     quarantined: latestRun === null ? [] : latestRun.quarantined.map((item) => ({ ...item })),
   };
 
@@ -542,9 +543,12 @@ function commonSection(view: VerificationView): string[] {
 /** 여섯 항목 전부 — 값이 없어도 항목은 쓴다. 측정 불가는 그렇게 쓴다 (0이라고 쓰지 않는다) */
 function outOfScopeSection(view: VerificationView): string[] {
   const out = view.outOfScope;
-  // 블록 그래프를 읽었는지는 머리말 출처로 안다 — `parser` 출처가 없으면 "미분류 파일"은 측정 불가
-  const graphRead = view.header.sources.some((ref) => ref.kind === 'parser');
-  const blocks = out.blocksWithoutRules.length === 0 ? '없음' : out.blocksWithoutRules.join(', ');
+  const blocks =
+    'unavailable' in out.blocksWithoutRules
+      ? '측정 불가 (블록 그래프 없음)'
+      : out.blocksWithoutRules.length === 0
+        ? '없음'
+        : out.blocksWithoutRules.join(', ');
   const code =
     out.codeWithoutRules.length === 0
       ? '없음 (규칙 scope 미도입 — 규칙은 블록 전체를 덮는다)'
@@ -561,7 +565,8 @@ function outOfScopeSection(view: VerificationView): string[] {
         ? '측정 불가 (트레이스 없음)'
         : '측정 불가 (정적 그래프 없음)'
       : `${out.untestedFlows.count}개 / 진입점 ${out.untestedFlows.total} (${out.untestedFlows.mode})`;
-  const unclassified = graphRead ? `${out.unclassifiedFiles}개` : '측정 불가 (블록 그래프 없음)';
+  const unclassified =
+    typeof out.unclassifiedFiles === 'number' ? `${out.unclassifiedFiles}개` : '측정 불가 (블록 그래프 없음)';
   const quarantined =
     view.lastCheck === undefined
       ? '검사 없음'
@@ -590,7 +595,7 @@ export function renderVerificationView(view: VerificationView): string {
   // 경보 — 검사 실패(이전 결과) · JUnit 없음 · 검사 기록 없음 (view-verification 5절)
   if (view.staleResult !== undefined) {
     const previous =
-      view.staleResult.previousCommit === ''
+      view.staleResult.previousCommit === null
         ? '이전 결과 없음'
         : `이전 결과(${shortCommit(view.staleResult.previousCommit)})를 보인다`;
     lines.push(

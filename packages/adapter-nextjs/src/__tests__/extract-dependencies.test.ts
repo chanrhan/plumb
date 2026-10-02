@@ -10,7 +10,7 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type AdapterContext, loadConfig, type PlumbConfig } from '@plumb/core';
+import { type AdapterContext, type BlockGraph, loadConfig, type PlumbConfig } from '@plumb/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   type DepcruiseJson,
@@ -21,7 +21,6 @@ import {
   infraEdgesOf,
   infraKindOfImage,
   isReportFresh,
-  type NextjsBlockGraph,
   packageNameOf,
   parseComposeServices,
 } from '../extract-dependencies.js';
@@ -362,7 +361,7 @@ describe('isReportFresh — #44 보고서 재사용 판정', () => {
 
 describe('extractDependencies — examples/testbed 실제 실행', () => {
   let ctx: AdapterContext;
-  let graph: NextjsBlockGraph;
+  let graph: BlockGraph;
 
   beforeAll(async () => {
     const loaded = await loadConfig({ target: TESTBED });
