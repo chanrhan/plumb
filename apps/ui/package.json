@@ -10,7 +10,7 @@
     "start": "next start -p 4817 -H 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "test": "echo '@plumb/ui: 테스트 없음 (M3 이후 추가)'"
+    "test": "vitest run"
   },
   "dependencies": {
     "@plumb/core": "workspace:*",
@@ -23,6 +23,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
   }
 }
