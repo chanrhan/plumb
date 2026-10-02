@@ -1,0 +1,28 @@
+{
+  "name": "@plumb/ui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Plumb 화면 (Next.js). @plumb/core를 import하는 두 입구 중 하나. 127.0.0.1:4817",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 4817 -H 127.0.0.1",
+    "build": "next build",
+    "start": "next start -p 4817 -H 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "test": "echo '@plumb/ui: 테스트 없음 (M3 이후 추가)'"
+  },
+  "dependencies": {
+    "@plumb/core": "workspace:*",
+    "next": "^15",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5.9.3"
+  }
+}

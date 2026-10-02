@@ -1,0 +1,3 @@
+- 포트 4817 (`pnpm --filter @plumb/ui dev` → http://127.0.0.1:4817, `/` 는 `/views` 로 간다)
+- 127.0.0.1 에만 바인드한다. 1인용 로컬 도구, 사용자 인증 없음 (토큰 흐름은 M3 #17, `docs/screens/README.md` 3.2)
+- `@plumb/core` 는 import 만 한다. 코어에 HTTP 서버는 없고, 이 앱이 코어의 두 입구(CLI · UI) 중 하나다 (`docs/screens/README.md` 3.1)
