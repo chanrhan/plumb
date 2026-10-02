@@ -2,3 +2,5 @@
 .env
 .next/
 next-env.d.ts
+reports/*.xml
+reports/*.json
