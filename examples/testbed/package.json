@@ -6,14 +6,20 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "typecheck": "tsc --noEmit",
+    "build": "prisma generate && next build",
+    "typecheck": "prisma generate && tsc --noEmit",
     "lint": "biome check .",
-    "test": "echo \"test: #21 에서 vitest 설정\" && exit 0",
+    "test": "prisma generate && vitest run",
+    "test:junit": "prisma generate && vitest run --reporter=junit --outputFile=reports/junit.xml",
+    "depcruise": "depcruise src --config .dependency-cruiser.cjs",
+    "depcruise:json": "depcruise src --config .dependency-cruiser.cjs --output-type json --output-to reports/depcruise.json",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:local": "bash scripts/db-local.sh",
+    "db:seed": "tsx prisma/seed.ts",
     "prisma:validate": "prisma validate",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
     "openapi:lint": "redocly lint openapi.yaml"
   },
   "dependencies": {
@@ -28,7 +34,11 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dependency-cruiser": "^18.5.0",
+    "fast-check": "^4.10.2",
     "prisma": "^6",
-    "typescript": "^5.9.3"
+    "tsx": "^4",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
   }
 }
