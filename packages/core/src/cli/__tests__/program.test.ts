@@ -10,7 +10,7 @@ import {
 
 const EXPECTED_COMMANDS = ['init', 'rule', 'approve', 'run', 'check', 'views', 'ui', 'open'];
 /** M3(#32)에서 구현된 명령. 나머지는 자리 표시 */
-const IMPLEMENTED = ['rule', 'approve'];
+const IMPLEMENTED = ['rule', 'approve', 'ui'];
 const STUBS = EXPECTED_COMMANDS.filter((name) => !IMPLEMENTED.includes(name));
 
 /** 테스트용 프로그램. 종료 대신 기록하고, 출력은 버퍼에 모은다 */
@@ -101,7 +101,6 @@ describe('미구현 하위 명령', () => {
       run: 'M6',
       check: 'M5',
       views: 'M8',
-      ui: 'M3',
       open: 'M8',
     });
   });

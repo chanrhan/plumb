@@ -11,6 +11,7 @@ import { Command } from 'commander';
 import { registerApproveCommand } from './commands/approve.js';
 import { registerRuleCommand } from './commands/rule.js';
 import type { CliContext, Writer } from './commands/shared.js';
+import { registerUiCommand } from './commands/ui.js';
 
 /** 아직 구현되지 않은 하위 명령. `milestone`은 ROADMAP의 마일스톤 */
 export interface StubCommand {
@@ -28,7 +29,6 @@ export const STUB_COMMANDS: readonly StubCommand[] = [
   { name: 'run', description: '승인된 규칙으로 파이프라인을 실행한다', milestone: 'M6' },
   { name: 'check', description: '전체 검사를 돌려 규칙별 상태를 기록한다', milestone: 'M5' },
   { name: 'views', description: 'View 6개를 다시 만든다', milestone: 'M8' },
-  { name: 'ui', description: '로컬 UI 서버를 띄운다', milestone: 'M3' },
   { name: 'open', description: 'View를 브라우저로 연다', milestone: 'M8' },
 ];
 
@@ -90,6 +90,9 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
         break;
       case 'approve':
         registerApproveCommand(program, ctx);
+        break;
+      case 'ui':
+        registerUiCommand(program, { exit: ctx.exit, stderr: ctx.stderr });
         break;
       default: {
         const stub = STUB_COMMANDS.find((s) => s.name === name);
