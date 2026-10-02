@@ -18,7 +18,9 @@
 | M2 | 완료 | testbed: payment 도메인(naive refund), OpenAPI + Route Handler(422는 계약에만), Vitest(JUnit) + depcruise 블록 규칙 5개 |
 | M3 | #36만 남음 | 저장소 코어 · CLI(`rule`·`approve`) · UI 토큰 통로 · UI `/rules` · 결정 기록 완료. 쿠키 없는 승인 401 확인. #36 rule-drafter는 `env/local`(#10 뒤) |
 | M4 | 대기 | 전부 `env/local`. #10 결과(`docs/harness-notes.md`)가 입력 |
-| M5 | 진행 중 | #43 JUnit 파서 · #44 어댑터 runTests/정적 · #45 어댑터 블록 그래프 · #46 상태·범위 밖 계산 → #47 `plumb check` |
+| M5 | 완료 | `plumb check`: Vitest JUnit + depcruise → 규칙별 상태 + 검사 범위 밖 → `checks/`·`rule-status/`. CLI 표와 UI `/rules` 상태 열 연결 |
+| M6 · M7 | 대기 | `env/local`(에이전트 실행). #10 뒤 |
+| M8 | #63 · #67만 남음 | View 6개 생성기 + `plumb views` + UI `/views`(Markdown·Mermaid, `plumb://open` 점프) 완료. testbed에서 `plumb check --views` → 12 파일. 흐름도는 spike 결과 A안(트레이스 + 정적) — 결정 #67 사람 확인 대기. #63 타입 보완 진행 중 |
 
 ## 마일스톤
 
@@ -120,17 +122,19 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 
 ### M8 View 6개 + View 화면
 
-**종료 증거**: `plumb views`가 6개 파일을 파서 출력에서만 생성 · UI가 목 데이터 없이 렌더링
+**종료 증거**: `plumb views`가 6개 파일을 파서 출력에서만 생성 · UI가 목 데이터 없이 렌더링 — **충족** (testbed `plumb check --views` → `views/` 12 파일, 각 View에 파서·실행·저장소 출처 표시줄)
 
-| wave | 내용 |
-|---|---|
-| 0 | 아키텍처 (depcruise → 블록 그래프 JSON → Mermaid) |
-| 0 | 데이터 모델 · 계약 (Prisma + OpenAPI) |
-| 0 | 외부 의존성 (lockfile) |
-| 0 | 검증 상태 View 렌더러 (M5 결과 → Markdown) |
-| 1 | 기술 변경 로그 (diff 이벤트 감지 + 결정 기록, "사유 없음" 표시) |
-| 1 | `[L]` 도메인 흐름도 spike: OTel 수집 시도 → 불가 시 정적 호출 그래프 |
-| 2 | `plumb views` 묶기 + UI Markdown · Mermaid 렌더링 |
+| wave | 이슈 | 내용 |
+|---|---|---|
+| 0 | #53 | View 공통부: `ViewGenerator` · `ViewHeader` · Markdown 헬퍼(표 · Mermaid · `plumb://open` 앵커 · 출처 표시줄) · `store.views`(JSON 정본 + md) |
+| 1 | #54 | 아키텍처 (블록 그래프 → Mermaid L0/L1 + 블록·간선·미분류·필수 검사 표) |
+| 1 | #55 | 데이터 모델·계약 (어댑터 `readSchemas`: Prisma DMMF · OpenAPI → 모델 표 · erDiagram · API 표 · 계약 해시 `store.contracts`) |
+| 1 | #56 | 외부 의존성 (pnpm lockfile 모노레포 `importers` · externals · L0 서비스 · 30일 의존 이벤트 + 결정 기록) |
+| 1 | #57 | 검증 상태 (CheckRun + rule-status → §6.3 화면, 검사 범위 밖 절 생략 불가) |
+| 1 | #59 | 도메인 흐름도 spike → **A안**(Vitest 중 OTel 스팬 수집 + 정적 호출 그래프, 실선·점선. 트레이스 0개면 static 자동 전환) — 결정 #67 |
+| 2 | #58 | 기술 변경 로그 (설계 변경 이벤트 6종 감지: base 커밋 worktree 전후 비교 · 결정 기록 연결 · "사유 없음") |
+| 3 | #60 | `plumb views` · `plumb check --views` · `plumb open`(이유 필수, `code-opens.jsonl`) · UI `/views` + `/api/views/:name`·`regenerate`·`open` |
+| 4 | #63 | 타입 보완 — PR들의 "타입 보완 후보" 일괄 반영, 임시 어댑터 타입 제거 |
 
 ### M9 첫 슬라이스 통과 점검 `[L]`
 
@@ -147,4 +151,4 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 
 ## 이슈 등록 시점
 
-M0 · M1 · M2 · M3 · M5 이슈는 등록했다. M4는 #10 결과를 보고 등록한다. M2 이후는 **각 마일스톤을 시작할 때** 등록한다. 그 시점의 타입과 구조를 반영해야 범위와 범위 밖이 정확해지기 때문이다.
+M0 · M1 · M2 · M3 · M5 · M8 이슈는 등록했다. M4 · M6 · M7은 #10 결과를 보고 등록한다. M2 이후는 **각 마일스톤을 시작할 때** 등록한다. 그 시점의 타입과 구조를 반영해야 범위와 범위 밖이 정확해지기 때문이다.
