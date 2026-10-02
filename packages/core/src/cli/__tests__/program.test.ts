@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { createProgram, NOT_IMPLEMENTED_EXIT_CODE, readPackageVersion, STUB_COMMANDS } from '../program.js';
 
 const EXPECTED_COMMANDS = ['init', 'rule', 'approve', 'run', 'check', 'views', 'ui', 'open'];
+/** 본체가 연결된 명령. 자리 표시(exit 2) 테스트에서 뺀다 — `ui`는 #33 (`ui.test.ts`) */
+const IMPLEMENTED_COMMANDS = ['ui'];
+const STUB_ONLY_COMMANDS = EXPECTED_COMMANDS.filter((name) => !IMPLEMENTED_COMMANDS.includes(name));
 
 /** 테스트용 프로그램. 종료 대신 기록하고, 출력은 버퍼에 모은다 */
 function testProgram(options: { version?: string } = {}) {
@@ -66,7 +69,7 @@ describe('plumb --version', () => {
 });
 
 describe('미구현 하위 명령', () => {
-  it.each(EXPECTED_COMMANDS)('plumb %s → stderr 한 줄 + exit 2', async (name) => {
+  it.each(STUB_ONLY_COMMANDS)('plumb %s → stderr 한 줄 + exit 2', async (name) => {
     const { program, err, exits } = testProgram();
 
     await program.parseAsync([name], { from: 'user' });

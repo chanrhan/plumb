@@ -7,6 +7,7 @@
 
 import { createRequire } from 'node:module';
 import { Command } from 'commander';
+import { registerUiCommand } from './commands/ui.js';
 
 /** 아직 구현되지 않은 하위 명령. `milestone`은 ROADMAP의 마일스톤 */
 export interface StubCommand {
@@ -62,6 +63,11 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     .option('--target <dir>', '대상 루트 (plumb.config.json이 있는 폴더). 없으면 현재 폴더에서 위로 탐색');
 
   for (const stub of STUB_COMMANDS) {
+    if (stub.name === 'ui') {
+      // #33 — 구현됨. 목록의 자리(도움말 순서)는 그대로 두고 본체만 연결한다
+      registerUiCommand(program, { exit, stderr });
+      continue;
+    }
     program
       .command(stub.name)
       .description(`${stub.description} (${stub.milestone})`)
