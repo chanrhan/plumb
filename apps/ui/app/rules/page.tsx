@@ -1,5 +1,6 @@
-import { RulesParseError, RulesValidationError, StoreNotInitializedError } from '@plumb/core';
+import { RulesParseError, RulesValidationError, StoreNotInitializedError, shortCommit } from '@plumb/core';
 import Link from 'next/link';
+import { shortTime } from '@/components/rules/format';
 import { RuleRow } from '@/components/rules/RuleRow';
 import { applyRuleListFilter, hasFilter, parseRuleListFilter, readRuleList } from '@/lib/rules';
 
@@ -31,6 +32,7 @@ const STATUS_OPTIONS = [
 /**
  * 규칙 목록 · 승인 (`/rules`, work-approve 3.1). 서버 컴포넌트 — `getStore()`를 직접 부른다 (README 3.1).
  * 필터는 URL 쿼리 `?block= &kind= &approval= &status=` (기본 전체, 6절 5번). 행을 누르면 `/rules/<id>` 상세.
+ * 상태 열은 마지막 `plumb check`의 `rule-status/` 기록(#47). 머리줄에 마지막 검사 커밋 · 시각 — 없으면 "마지막 검사 없음".
  */
 export default async function RulesPage({ searchParams }: { searchParams: Promise<Query> }) {
   const query = await searchParams;
@@ -72,6 +74,9 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
         <h1>규칙 · 승인</h1>
         <p>
           ⚠ 미확인 {list.unconfirmed}건{longest === undefined ? '' : ` · 최장 ${longest}일 체류`}
+          {list.lastCheck === undefined
+            ? ' · 마지막 검사 없음'
+            : ` · 마지막 검사 ${shortCommit(list.lastCheck.commit)} · ${shortTime(list.lastCheck.finishedAt)}`}
         </p>
       </header>
       {list.queueLimit.exceeded ? (
