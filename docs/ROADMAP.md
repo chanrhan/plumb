@@ -15,7 +15,8 @@
 |---|---|---|
 | M0 | 완료 | 와이어프레임 9장 + 타입 + 종이 시뮬레이션. 저장 형식 기본값 7건은 #17에서 사람 확인 대기 |
 | M1 | #10만 남음 | #10 SDK 스모크는 `env/local`. 사용자 머신에서 실행 후 `docs/harness-notes.md`가 M4 입력이 된다 |
-| M2 | 진행 중 | #18 완료, #19 · #20 · #21 진행 |
+| M2 | 완료 | testbed: payment 도메인(naive refund), OpenAPI + Route Handler(422는 계약에만), Vitest(JUnit) + depcruise 블록 규칙 5개 |
+| M3 | 진행 중 | #31 저장소 코어 → #32 CLI · #33 UI 토큰 통로 · #34 UI 규칙 화면 · #35 결정 기록 → #36 rule-drafter `[L]` |
 
 ## 마일스톤
 
@@ -60,13 +61,14 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 
 **종료 증거**: 승인 행위 없이 `rules.yaml` 상태를 바꾸면 `plumb check`가 경보 · 토큰 없는 `POST /api/approve` → 401 · `[L]` `plumb rule draft`가 EARS 한 줄을 만든다
 
-| wave | 내용 |
-|---|---|
-| 0 | 규칙 YAML 스키마(§5.2) + 저장소 레이아웃 + 읽기/쓰기 API |
-| 1 | `plumb approve` / `plumb rule list` |
-| 1 | UI 규칙 목록 · 승인 화면 + 일회용 토큰 발급·검증 |
-| 1 | 결정 기록 D-xxxx 형식 · 파서 |
-| 2 | `[L]` rule-drafter 에이전트 (자연어 → EARS, maxTurns 1) |
+| wave | 이슈 | 내용 |
+|---|---|---|
+| 0 | #31 | 저장소 레이아웃(`rules.yaml` · `proposals/` · `approvals/` · `rule-status/` · `checks/` · `decisions/` · `runs/` · `views/` · `contracts/` · `review-queue/`) + 규칙·제안·승인 코어 API. `rules.yaml`은 승인으로만, 마지막 승인 해시로 변조 감지 |
+| 1 | #32 | `plumb rule list|show|propose|reject`, `plumb approve` + testbed `plumb.config.json` + 첫 제안 `pay.refund-window` |
+| 1 | #33 | UI 승인 통로: `plumb ui` 토큰 → 쿠키, `/api/**` 401, `GET /api/status`, 상단 바 |
+| 1 | #34 | UI `/rules` 화면 + 규칙 API (list · show · approve · reject) |
+| 1 | #35 | 결정 기록 D-xxxx 형식(Markdown + front matter) 파서·작성기 + 예시 D-0001 |
+| 2 | #36 | `[L]` `plumb rule draft` — rule-drafter 역할 (자연어 → EARS Proposal, maxTurns 1) |
 
 ### M4 하네스 + 격리 + 종료 조건 `[L]`
 
@@ -142,4 +144,4 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 
 ## 이슈 등록 시점
 
-M0 · M1 · M2 이슈는 등록했다. M2 이후는 **각 마일스톤을 시작할 때** 등록한다. 그 시점의 타입과 구조를 반영해야 범위와 범위 밖이 정확해지기 때문이다.
+M0 · M1 · M2 · M3 이슈는 등록했다. M2 이후는 **각 마일스톤을 시작할 때** 등록한다. 그 시점의 타입과 구조를 반영해야 범위와 범위 밖이 정확해지기 때문이다.
