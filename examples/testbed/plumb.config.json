@@ -1,0 +1,19 @@
+{
+  "service": ".",
+  "store": "./.plumb-store",
+  "work": "./.work",
+  "adapter": "nextjs",
+  "node": "22",
+  "roles": {
+    "test-writer": { "model": "default", "maxTurns": 60, "maxBudgetUsd": 3 },
+    "implementer": { "model": "default", "maxTurns": 80, "maxBudgetUsd": 5 },
+    "injector": { "model": "default", "maxTurns": 30, "maxBudgetUsd": 2 },
+    "rule-drafter": { "model": "default", "maxTurns": 1, "maxBudgetUsd": 0.5 }
+  },
+  "stopBlockLimit": 5,
+  "diffSearch": { "numRuns": 1000, "seed": 20261001 },
+  "blocks": {
+    "payment": { "include": ["src/domains/payment/**"], "risk": "high" },
+    "auth": { "include": ["src/domains/auth/**"] }
+  }
+}
