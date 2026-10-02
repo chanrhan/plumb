@@ -7,6 +7,7 @@
 
 import type {
   CheckRun,
+  ContractApproval,
   PlumbConfig,
   Proposal,
   ProposalId,
@@ -27,6 +28,7 @@ import {
   reject,
 } from './approvals.js';
 import { latestCheckRun, listCheckRuns, writeCheckRun } from './checks.js';
+import { type ApproveContractInput, approveContract, getContractApproval, listContractApprovals } from './contracts.js';
 import { initStore, type StoreMeta } from './init.js';
 import { type StorePaths, storePaths } from './paths.js';
 import { getProposal, listProposals, writeProposal } from './proposals.js';
@@ -37,6 +39,7 @@ import { listViews, readView, type StoredView, type ViewListItem, writeView } fr
 
 export * from './approvals.js';
 export * from './checks.js';
+export * from './contracts.js';
 export * from './errors.js';
 export * from './init.js';
 export * from './paths.js';
@@ -130,6 +133,18 @@ export interface Store {
     /** 탭 순서 (VIEW_NAMES) */
     list(): Promise<ViewListItem[]>;
   };
+  /**
+   * 계약 해시 기록 `contracts/<파일>.json` — 저장소: 승인된 계약 파일의 해시 (기획안 §5.1). 데이터 모델·계약 View가 어댑터
+   * `readSchemas()`의 현재 해시와 비교해 `match | changed | unapproved`를 낸다. 승인 통로(UI · CLI)는 M10 — 지금은 코어 API뿐
+   */
+  contracts: {
+    /** 계약 파일 경로(레포 상대)로 찾는다. 없으면 `undefined` */
+    get(path: string): Promise<ContractApproval | undefined>;
+    /** 경로순 */
+    list(): Promise<ContractApproval[]>;
+    /** 현재 해시를 승인한다 (있으면 덮어쓴다) */
+    approve(input: ApproveContractInput): Promise<ContractApproval>;
+  };
   status(): Promise<StoreStatus>;
 }
 
@@ -170,6 +185,11 @@ export function openStore(config: StoreConfig, root: string, options: StoreOptio
       write: (name, view, markdown) => writeView(paths, name, view, markdown),
       read: (name) => readView(paths, name),
       list: () => listViews(paths),
+    },
+    contracts: {
+      get: (path) => getContractApproval(paths, path),
+      list: () => listContractApprovals(paths),
+      approve: (input) => approveContract(paths, input, timing),
     },
     status: () => storeStatus(paths, timing),
   };

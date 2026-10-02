@@ -37,12 +37,17 @@ const expectedMilestone: Record<(typeof ADAPTER_METHODS)[number], string> = {
   extractDependencies: 'done',
   generateStubs: 'M4',
   runTests: 'done',
-  readSchemas: 'M8',
-  collectTraces: 'M8',
+  readSchemas: 'done',
+  collectTraces: 'done',
 };
 
-/** 구현된 메서드. 실제 동작은 `run-tests.test.ts`(#44) · `extract-dependencies.test.ts`(#45)가 testbed로 검증한다 */
-const IMPLEMENTED: ReadonlyArray<(typeof ADAPTER_METHODS)[number]> = ['runTests', 'extractDependencies'];
+/** 구현된 메서드. 실제 동작은 `run-tests.test.ts`(#44) · `extract-dependencies.test.ts`(#45) · `read-schemas.test.ts`(#55) · `flow-collect-traces.test.ts`(#59)가 testbed로 검증한다 */
+const IMPLEMENTED: ReadonlyArray<(typeof ADAPTER_METHODS)[number]> = [
+  'runTests',
+  'extractDependencies',
+  'readSchemas',
+  'collectTraces',
+];
 const NOT_IMPLEMENTED = ADAPTER_METHODS.filter((method) => !IMPLEMENTED.includes(method));
 
 describe('@plumb/adapter-nextjs — Adapter 인터페이스 준수', () => {

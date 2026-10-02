@@ -4,6 +4,8 @@
 next-env.d.ts
 reports/*.xml
 reports/*.json
+# 테스트 실행 중 OTel 스팬 (instrumentation-test.ts → collectTraces, #59)
+reports/traces/
 # 로컬 보호 저장소 (plumb.config.json store). 실제는 ~/.plumb/stores/
 .plumb-store/
 .work/
