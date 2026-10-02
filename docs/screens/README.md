@@ -39,7 +39,7 @@
 
 | 항목 | 출처 |
 |---|---|
-| 프로젝트 이름 | 저장소: `plumb.config.json` 의 대상 경로 이름 |
+| 프로젝트 이름 | 파서: `plumb.config.json` 의 대상 경로 이름 |
 | 보호 저장소 상태 (정상 / 변조 증거) | 실행: `plumb check` 의 해시 체인 검증 결과 (M3는 "정상" 고정, 해시 체인은 M10) |
 | 마지막 검사 커밋 · 시각 | 저장소: 마지막 `plumb check` 결과 기록 |
 | 미확인 항목 수 `⚠ n` | 저장소: 상태가 잠정(`⚠ 미확인`)인 규칙 수 + 검토 대기열 항목 수 |
@@ -60,6 +60,8 @@
 | `저장소:` | 보호 저장소에 기록된 것 | 규칙, 승인 기록, 결정 기록, 검사 결과 이력 |
 | `git:` | git 이력에서 읽은 것 | diff, 커밋, 변경 파일 |
 | `사용자 입력:` | 화면에서 개발자가 직접 넣는 것 | 승인 버튼, 코드 열람 이유 |
+
+검사를 돌려 나온 값은 읽은 위치와 무관하게 `실행:`이다 (보호 저장소에 기록된 검사 결과를 읽어 그리더라도 값의 출처는 `실행:`). `저장소:`는 사람이 승인·결정·기록으로 쓴 것에 쓴다.
 
 ### 2.2 코드 열람 점프
 
@@ -121,21 +123,23 @@ plumb ui
 
 ### 3.3 API 표면 초안 (UI 서버 route handler)
 
-이름만 정한다. 요청·응답 타입은 #5에서.
+이름만 정한다. 요청·응답 타입과 오류 코드는 `docs/types/api.ts` (#5). 모든 경로는 토큰 쿠키가 없으면 401.
 
-| 메서드 | 경로 | 하는 일 | 코어 함수 | 도입 |
-|---|---|---|---|---|
-| GET | `/api/status` | 상단 바 (저장소 상태, 마지막 검사, 미확인 수) | `store.status()` | M3 |
-| GET | `/api/blocks` | 블록 트리 | `adapter.extractDependencies()` 캐시 | M8 |
-| GET | `/api/rules` | 규칙 목록 + 상태 | `store.rules.list()` | M3 |
-| GET | `/api/rules/:id` | 규칙 하나 + 승인 이력 + 결정 기록 | `store.rules.get()` | M3 |
-| POST | `/api/rules/:id/approve` | 승인 (고위험 완화는 사전 승인) | `store.rules.approve()` | M3 |
-| POST | `/api/rules/:id/reject` | 기각 + 사유 | `store.rules.reject()` | M3 |
-| POST | `/api/runs` | 파이프라인 시작 (규칙 ID 목록) | `spawn('plumb run --detach ...')` | M6 |
-| GET | `/api/runs` | 실행 목록 | `runs/*.json` 읽기 | M6 |
-| GET | `/api/runs/:id` | 진행 상황 (단계 ①~⑥, 역할, 종료 차단 횟수, 예산) | `runs/<id>.json` 읽기 | M6 |
-| GET | `/api/views/:name` | View 하나 (Markdown + Mermaid) | `views.render(name)` 또는 `views/<name>.md` 읽기 | M8 |
-| POST | `/api/open` | 코드 열람 점프 + 이유 기록 | `ide.open()` + `store.codeOpens.append()` | M8 |
+| 메서드 | 경로 | 하는 일 | 코어 함수 | 오류 (401 외) | 도입 |
+|---|---|---|---|---|---|
+| GET | `/api/status` | 상단 바 (저장소 상태, 마지막 검사, 미확인 수) | `store.status()` | — | M3 |
+| GET | `/api/blocks` | 블록 트리 | `adapter.extractDependencies()` 캐시 | — | M8 |
+| GET | `/api/rules` | 규칙 목록 + 상태 | `store.rules.list()` | 400 `rules.yaml` 파싱 오류 | M3 |
+| GET | `/api/rules/:id` | 규칙 하나 + 승인 이력 + 결정 기록 | `store.rules.get()` | 404 | M3 |
+| POST | `/api/rules/:id/approve` | 승인 (고위험 완화는 사전 승인) | `store.rules.approve()` | 404 · 409 제안이 바뀜(재제안 · CLI 승인) → 다시 읽기 | M3 |
+| POST | `/api/rules/:id/reject` | 기각 + 사유 (사유 필수) | `store.rules.reject()` | 400 사유 없음 · 404 · 409 | M3 |
+| POST | `/api/runs` | 파이프라인 시작 (규칙 ID 목록) | `spawn('plumb run --detach ...')` | 400 미승인 규칙 · 상한 없음 · 대기열 상한(M10) · 409 진행 중 실행 있음 · 500 spawn 실패 | M6 |
+| GET | `/api/runs` | 실행 목록 | `runs/*.json` 읽기 | — | M6 |
+| GET | `/api/runs/:id` | 진행 상황 (단계 ①~⑥, 역할, 종료 차단 횟수, 예산, 가로챈 출력 꼬리) | `runs/<id>.json` 읽기 | 404 | M6 |
+| POST | `/api/runs/:id/abort` | 중단. `runs/<id>.json` 의 `pid` 로 SIGTERM (3.4). 실제 종료는 파일 폴링으로 확인 | `process.kill(pid)` | 404 · 409 이미 종료 | M6 |
+| GET | `/api/views/:name` | View 하나. 머리말(`generatedAt` · `commit` · `sources[]`) + Markdown(Mermaid 포함) + 구조 데이터 | `views.read(name)` (`views/<name>.json` + `.md`) | 404 View 없음 (파일 없음 또는 알 수 없는 이름 → 탭 비활성) | M8 |
+| POST | `/api/views/regenerate` | View 재생성 (이름 목록, 비우면 전부). `plumb views` 를 spawn | `spawn('plumb views ...')` | 404 알 수 없는 이름 · 409 재생성 진행 중 · 500 | M8 |
+| POST | `/api/open` | 코드 열람 점프 + 이유 기록. IDE 명령이 실패해도 기록은 `failed` 로 남고 200 | `ide.open()` + `store.codeOpens.append()` | 400 이유 없음 | M8 |
 
 ### 3.4 결정 기록
 
