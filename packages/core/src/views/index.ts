@@ -4,6 +4,7 @@
  */
 
 export * from './architecture.js';
+export * from './changelog.js';
 export * from './contract.js';
 export * from './dependencies.js';
 export * from './flow.js';
