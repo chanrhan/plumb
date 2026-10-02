@@ -22,7 +22,9 @@ class FakeChild extends EventEmitter {
 const spawnCalls: Array<{ command: string; args: string[]; options: Record<string, unknown> }> = [];
 let child: FakeChild;
 
-vi.mock('node:child_process', () => ({
+// `program.ts`가 View 생성기(`views/registry.ts` → `contract.ts`의 `promisify(execFile)`)까지 끌어오므로 spawn만 바꾸고 나머지는 원본
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
   spawn: (command: string, args: string[], options: Record<string, unknown>) => {
     spawnCalls.push({ command, args, options });
     return child;

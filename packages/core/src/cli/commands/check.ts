@@ -10,6 +10,9 @@
  *
  * 종료 코드: 0 (기록이 목적 — 기획안 §11 "커밋 시 정적 검사·결과 기록, 차단 없음"). `--strict`(병합 게이트용)면 변조 증거 5 ·
  * 러너 실패(JUnit 결과 없음) 6 · 🔴 있음 4 (이 순서로 첫 것).
+ *
+ * `--views`(#60, 기획안 §11 세션 종료 · 커밋 시 View 갱신): 검사 기록 뒤 같은 어댑터로 `generateViews()`를 돌리고 요약 한 줄을 덧붙인다.
+ * View 생성 실패는 종료 코드를 바꾸지 않는다 — 검사 결과가 기록된 것이 이 명령의 성공이다. 실패한 View는 표에 보인다.
  */
 
 import { relative } from 'node:path';
@@ -33,6 +36,7 @@ import {
   computeStatusCounts,
 } from '../../checks/summary.js';
 import type { CommonCheckRow, Rule, RuleStatus, RuleStatusRecord, StatusCounts } from '../../types/index.js';
+import { buildViewContext, formatSummary, generateViews, type ViewGenerationResult } from '../../views/generate.js';
 import {
   type CliContext,
   displayWidth,
@@ -71,6 +75,8 @@ export interface CheckOptions {
   json: boolean;
   strict: boolean;
   filter?: string;
+  /** 검사 뒤 View를 갱신한다 (#60) */
+  views?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +372,21 @@ export async function checkCommand(ctx: CliContext, opened: OpenedStore, options
   });
   const code = exitCodeOf(result, options.strict);
 
+  // --views: 같은 어댑터로 View 갱신 (기획안 §11). 실패해도 검사 종료 코드는 그대로
+  let views: ViewGenerationResult[] | undefined;
+  if (options.views === true) {
+    const viewCtx = await buildViewContext({
+      config,
+      root: loaded.root,
+      store,
+      loaded: { adapter, ...(staticRunner === undefined ? {} : { staticRunner }) },
+      ...(ctx.now === undefined ? {} : { now: ctx.now }),
+    });
+    views = await generateViews(viewCtx, undefined, {
+      ...(ctx.viewGenerators === undefined ? {} : { generators: ctx.viewGenerators }),
+    });
+  }
+
   if (options.json) {
     const visible = result.rules.filter((rule) => matchesFilter(rule, options.filter));
     const byRule = new Map(result.statuses.map((record) => [record.ruleId, record]));
@@ -418,12 +439,30 @@ export async function checkCommand(ctx: CliContext, opened: OpenedStore, options
       junitMissing: result.junitMissing,
       runnerFailed: result.runnerFailed,
       stale: result.stale,
+      ...(views === undefined
+        ? {}
+        : {
+            views: views.map((v) =>
+              'ok' in v && !v.ok ? { name: v.name, ok: false, stage: v.stage, error: v.error } : v,
+            ),
+          }),
       exitCode: code,
     });
   } else {
     ctx.stdout.write(renderCheck({ ctx, opened, result, pattern: options.filter }));
+    if (views !== undefined) ctx.stdout.write(renderViewsSummary(views));
   }
   return code;
+}
+
+/** `View 갱신: 5 생성 · 0 실패 · 1 아직 없음 (architecture, flow, …)` + 실패 사유 줄 */
+export function renderViewsSummary(views: readonly ViewGenerationResult[]): string {
+  const generated = views.filter((v) => 'ok' in v && v.ok).map((v) => v.name);
+  const lines = [`${formatSummary(views)}${generated.length === 0 ? '' : ` (${generated.join(', ')})`}`];
+  for (const v of views) {
+    if ('ok' in v && !v.ok) lines.push(`  ${v.name}: ${v.error}`);
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 export function registerCheckCommand(program: Command, ctx: CliContext): Command {
@@ -433,6 +472,7 @@ export function registerCheckCommand(program: Command, ctx: CliContext): Command
     .option('--json', '기계용 JSON 출력', false)
     .option('--strict', '병합 게이트용: 변조 증거 exit 5 · 러너 실패 6 · 🔴 있음 4', false)
     .option('--filter <pattern>', '표시할 규칙 (규칙 ID · 블록, * 글롭). 검사와 기록은 항상 전부')
+    .option('--views', '검사 뒤 View를 갱신한다 (plumb views와 같다)', false)
     .action(async (options: CheckOptions, command: Command) => {
       await runCommand(ctx, async () => checkCommand(ctx, await openTargetStore(ctx, targetOf(command)), options));
     });

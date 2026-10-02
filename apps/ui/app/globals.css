@@ -161,3 +161,142 @@ body {
   overflow: hidden;
   clip: rect(0 0 0 0);
 }
+
+/* /views (work-views). 격자와 간격만 */
+.view-tabs .tab-missing {
+  opacity: 0.5;
+}
+
+.view-tabs .tab-spacer {
+  flex: 1;
+}
+
+.view-tabs .tab-later span {
+  opacity: 0.5;
+}
+
+.view-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 1rem;
+  margin: 0 0 1rem;
+  padding: 0 0 0.5rem;
+  border-bottom: 1px solid;
+}
+
+.view-head .view-sourcebar {
+  flex: 1;
+  margin: 0;
+}
+
+.view-filter {
+  margin: 0;
+}
+
+.chip[aria-disabled="true"] {
+  border: 1px solid;
+  border-radius: 1rem;
+  padding: 0 0.5rem;
+  opacity: 0.6;
+}
+
+.view-body table {
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+}
+
+.view-body th,
+.view-body td {
+  text-align: left;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid;
+  vertical-align: top;
+}
+
+.view-body pre {
+  padding: 0.5rem;
+  border: 1px solid;
+  overflow-x: auto;
+}
+
+.view-body .ide-link span {
+  font-size: 0.85em;
+  text-decoration: none;
+}
+
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-failed p[role="alert"] {
+  margin: 0 0 0.25rem;
+  font-weight: bold;
+}
+
+.view-foot {
+  display: flex;
+  gap: 1.5rem;
+  margin: 1rem 0 0;
+  padding: 0.5rem 0 0;
+  border-top: 1px solid;
+}
+
+.view-foot .view-stale {
+  font-weight: bold;
+}
+
+.regenerate {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.open-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.open-dialog {
+  background: Canvas;
+  color: CanvasText;
+  border: 1px solid;
+  padding: 1rem;
+  min-width: 24rem;
+  max-width: 40rem;
+}
+
+.open-dialog h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1em;
+}
+
+.open-dialog fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0.5rem 0;
+}
+
+.open-dialog label {
+  display: block;
+  margin: 0.25rem 0;
+}
+
+.open-dialog input[type="text"] {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.open-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}

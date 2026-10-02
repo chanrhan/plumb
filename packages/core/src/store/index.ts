@@ -28,6 +28,15 @@ import {
   reject,
 } from './approvals.js';
 import { latestCheckRun, listCheckRuns, writeCheckRun } from './checks.js';
+import {
+  appendCodeOpen,
+  type CodeOpenInput,
+  type CodeOpenSummary,
+  countCodeOpens,
+  listCodeOpens,
+  type StoredCodeOpen,
+  summarizeCodeOpens,
+} from './code-opens.js';
 import { type ApproveContractInput, approveContract, getContractApproval, listContractApprovals } from './contracts.js';
 import { initStore, type StoreMeta } from './init.js';
 import { type StorePaths, storePaths } from './paths.js';
@@ -39,6 +48,7 @@ import { listViews, readView, type StoredView, type ViewListItem, writeView } fr
 
 export * from './approvals.js';
 export * from './checks.js';
+export * from './code-opens.js';
 export * from './contracts.js';
 export * from './errors.js';
 export * from './init.js';
@@ -145,6 +155,19 @@ export interface Store {
     /** 현재 해시를 승인한다 (있으면 덮어쓴다) */
     approve(input: ApproveContractInput): Promise<ContractApproval>;
   };
+  /**
+   * 코드 열람 기록 `code-opens.jsonl` — 사용자 입력: View의 `file:line` 점프와 그 이유 (README 2.2, 기획안 §15.3).
+   * IDE 열기 실패도 `result.status: 'failed'`로 남는다. `plumb open`과 UI `POST /api/open`이 쓴다
+   */
+  codeOpens: {
+    /** 이유 없으면 `ValidationError`. `at`은 저장소 시계 */
+    append(input: CodeOpenInput): Promise<StoredCodeOpen>;
+    list(): Promise<StoredCodeOpen[]>;
+    /** 이유별 · 결과별 수 */
+    summary(): Promise<CodeOpenSummary>;
+    /** 이 View의 열람 수. `since`(보통 머리말 `generatedAt`) 이후만 */
+    count(view: ViewName, since?: string): Promise<number>;
+  };
   status(): Promise<StoreStatus>;
 }
 
@@ -190,6 +213,12 @@ export function openStore(config: StoreConfig, root: string, options: StoreOptio
       get: (path) => getContractApproval(paths, path),
       list: () => listContractApprovals(paths),
       approve: (input) => approveContract(paths, input, timing),
+    },
+    codeOpens: {
+      append: (input) => appendCodeOpen(paths, input, timing),
+      list: () => listCodeOpens(paths),
+      summary: async () => summarizeCodeOpens(await listCodeOpens(paths)),
+      count: (view, since) => countCodeOpens(paths, view, since),
     },
     status: () => storeStatus(paths, timing),
   };
