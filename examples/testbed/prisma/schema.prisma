@@ -1,0 +1,10 @@
+// 모델은 #19에서 추가한다. 여기서는 datasource·generator만 둔다.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
