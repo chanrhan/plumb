@@ -12,4 +12,8 @@ process.env.DATABASE_URL ??= 'postgresql://postgres:postgres@localhost:5432/test
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',
+  migrations: {
+    // Prisma 6 방식. package.json 의 "prisma.seed" 는 deprecated.
+    seed: 'tsx prisma/seed.ts',
+  },
 });

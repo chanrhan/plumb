@@ -68,3 +68,15 @@ Plumb 개발에서 git과 서브 에이전트를 어떻게 쓰는지 정한다. 
 - 서브 에이전트는 머지하지 않는다. PR은 오케스트레이터(세션 또는 사람)가 읽고 머지한다
 - 범위 밖 파일을 건드린 PR은 머지하지 않고 이슈로 되돌린다. Plumb의 "범위 이탈 기록"과 같은 처리다
 - 서브 에이전트의 보고는 입력으로 받지 않는다. 머지 판단은 PR의 "검증 증거"에 붙은 실행 출력으로만 한다
+- 임시 파일(PR 본문 초안, 로그)은 **자기 worktree 안**에 둔다. 세션 scratchpad는 같은 wave의 에이전트끼리 공유되어 덮어써진다
+- PR은 `gh api`(REST)로 연다. `gh pr create`와 GraphQL은 이 환경에서 쓸 수 없다
+
+### 2.4 머지 절차 (오케스트레이터)
+
+같은 wave의 PR 여러 개가 `pnpm-lock.yaml`과 `packages/core/src/index.ts`(re-export 줄)를 함께 바꾼다. 충돌은 서브 에이전트가 아니라 오케스트레이터가 푼다.
+
+1. PR의 변경 파일이 이슈의 범위 안인지 확인한다 (`git diff --name-only origin/main...HEAD`)
+2. 완료 증거를 직접 다시 돌린다. 에이전트가 붙인 출력은 참고일 뿐이다
+3. 먼저 머지된 PR이 있으면 PR 브랜치에 `origin/main`을 머지한다. `pnpm-lock.yaml` 충돌은 main 쪽을 받은 뒤 `pnpm install`로 **재생성**한다(손으로 고치지 않는다). `src/index.ts` 충돌은 export 줄을 합치고 `biome check --write`로 정렬한다
+4. 통합된 상태에서 `pnpm check`가 exit 0이면 PR 브랜치에 푸시하고 squash merge한다. 머지 커밋 제목은 `<type>(#이슈): 제목 (#PR)`
+5. CI가 `pnpm check`를 `pnpm -r build`부터 돌리므로, 다른 패키지를 import하는 패키지는 빌드 순서(workspace 의존)에 기대면 된다

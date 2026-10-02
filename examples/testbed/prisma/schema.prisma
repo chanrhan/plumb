@@ -1,4 +1,5 @@
-// 모델은 #19에서 추가한다. 여기서는 datasource·generator만 둔다.
+// payment 도메인 모델 (#19). datasource·generator는 #18 골격.
+// 접근은 src/domains/payment/repo.ts 에서만 한다 (기획안 §4.4. #21의 depcruise 규칙이 강제).
 
 datasource db {
   provider = "postgresql"
@@ -7,4 +8,28 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
+}
+
+enum PaymentStatus {
+  PAID
+  REFUNDED
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  amount    Int
+  currency  String
+  paidAt    DateTime
+  status    PaymentStatus @default(PAID)
+  refunds   Refund[]
+  createdAt DateTime      @default(now())
+}
+
+model Refund {
+  id          String   @id @default(cuid())
+  paymentId   String
+  payment     Payment  @relation(fields: [paymentId], references: [id])
+  amount      Int
+  requestedAt DateTime
+  createdAt   DateTime @default(now())
 }
