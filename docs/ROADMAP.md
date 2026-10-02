@@ -9,6 +9,14 @@
 3. 화면은 M0에서 **구상**(와이어프레임 + 데이터 타입)만 하고, 구현은 각 기능과 함께 한다(M3 승인, M6 실행, M8 View). 목 데이터로 화면을 먼저 채우지 않는다
 4. 에이전트가 실제로 도는 단계(`[L]`)는 사용자 머신에서, 나머지는 어디서든
 
+## 진행 상태
+
+| 마일스톤 | 상태 | 비고 |
+|---|---|---|
+| M0 | 완료 | 와이어프레임 9장 + 타입 + 종이 시뮬레이션. 저장 형식 기본값 7건은 #17에서 사람 확인 대기 |
+| M1 | #10만 남음 | #10 SDK 스모크는 `env/local`. 사용자 머신에서 실행 후 `docs/harness-notes.md`가 M4 입력이 된다 |
+| M2 | 진행 중 | #18 완료, #19 · #20 · #21 진행 |
+
 ## 마일스톤
 
 wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위가 겹치지 않는다. `[L]` = `env/local`.
@@ -41,12 +49,12 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 
 **종료 증거**: `examples/testbed`에서 `pnpm test`와 `depcruise` 통과 · naive `refund`가 8일 지난 결제도 환불한다(규칙 위반 상태가 출발점)
 
-| wave | 내용 |
-|---|---|
-| 0 | Next.js + Prisma + Postgres(docker compose) 골격, `src/domains/payment/` 공개 진입점, §4.4 블록 구조 |
-| 1 | `createPayment` / naive `refund` + Prisma 스키마 + 시드 |
-| 1 | OpenAPI 파일 + Route Handler (`POST /payments`, `POST /refunds`) |
-| 1 | Vitest + fast-check + dependency-cruiser 설정, 빈 `test/acceptance/` |
+| wave | 이슈 | 내용 |
+|---|---|---|
+| 0 | #18 | Next.js + Prisma + Postgres 골격, `src/domains/payment/` 공개 진입점, §4.4 블록 구조. Docker 없는 환경용 `scripts/db-local.sh`(pg_ctl) |
+| 1 | #19 | `createPayment` / naive `refund` + Prisma 스키마 + 시드 |
+| 1 | #20 | OpenAPI 파일 + Route Handler (`POST /payments`, `POST /refunds`). 422는 계약에만 두고 구현하지 않는다 |
+| 1 | #21 | Vitest(JUnit 리포터 항상 켬) + fast-check + dependency-cruiser 블록 규칙, 빈 `test/acceptance/` |
 
 ### M3 보호 저장소 + 규칙 모델 + 승인 화면
 
@@ -134,4 +142,4 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 
 ## 이슈 등록 시점
 
-M0 · M1 이슈는 미리 등록했다. M2 이후는 **각 마일스톤을 시작할 때** 등록한다. 그 시점의 타입과 구조를 반영해야 범위와 범위 밖이 정확해지기 때문이다.
+M0 · M1 · M2 이슈는 등록했다. M2 이후는 **각 마일스톤을 시작할 때** 등록한다. 그 시점의 타입과 구조를 반영해야 범위와 범위 밖이 정확해지기 때문이다.
