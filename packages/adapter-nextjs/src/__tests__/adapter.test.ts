@@ -33,8 +33,11 @@ const calls: Record<(typeof ADAPTER_METHODS)[number], (a: Adapter) => Promise<un
   collectTraces: (a) => a.collectTraces(ctx, {}),
 };
 
+/** 아직 구현되지 않은 메서드. `extractDependencies`는 #45에서 구현됐다 (`extract-dependencies.test.ts`) */
+const notImplemented = ADAPTER_METHODS.filter((m) => m !== 'extractDependencies');
+
 const expectedMilestone: Record<(typeof ADAPTER_METHODS)[number], string> = {
-  extractDependencies: 'M8',
+  extractDependencies: 'done',
   generateStubs: 'M4',
   runTests: 'M5',
   readSchemas: 'M8',
@@ -54,7 +57,7 @@ describe('@plumb/adapter-nextjs — Adapter 인터페이스 준수', () => {
     }
   });
 
-  it.each(ADAPTER_METHODS)('%s 은(는) 예정 마일스톤을 적은 NotImplementedError를 던진다', async (method) => {
+  it.each(notImplemented)('%s 은(는) 예정 마일스톤을 적은 NotImplementedError를 던진다', async (method) => {
     const promise = calls[method](nextjsAdapter);
 
     await expect(promise).rejects.toBeInstanceOf(NotImplementedError);
