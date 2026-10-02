@@ -1,0 +1,30 @@
+{
+  "name": "@plumb/adapter-nextjs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Plumb 첫 어댑터 — Next.js + Prisma + Vitest + dependency-cruiser + OpenTelemetry (기획안 §4.4). 코어의 Adapter 인터페이스 구현",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@plumb/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

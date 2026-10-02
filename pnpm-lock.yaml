@@ -8,6 +8,22 @@ importers:
 
   .: {}
 
+  packages/adapter-nextjs:
+    dependencies:
+      '@plumb/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^2.5.15
+        version: 2.5.15
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7
+
   packages/core:
     devDependencies:
       '@biomejs/biome':
