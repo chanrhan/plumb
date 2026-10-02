@@ -42,6 +42,22 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/adapter-nextjs:
+    dependencies:
+      '@plumb/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^2.5.15
+        version: 2.5.15
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@22.20.5)(jiti@2.7.0)
+
   packages/core:
     devDependencies:
       '@biomejs/biome':
