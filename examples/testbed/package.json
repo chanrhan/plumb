@@ -13,7 +13,8 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:local": "bash scripts/db-local.sh",
-    "prisma:validate": "prisma validate"
+    "prisma:validate": "prisma validate",
+    "openapi:lint": "redocly lint openapi.yaml"
   },
   "dependencies": {
     "@prisma/client": "^6",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
+    "@redocly/cli": "^2",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
