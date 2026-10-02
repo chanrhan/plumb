@@ -4,3 +4,6 @@
 next-env.d.ts
 reports/*.xml
 reports/*.json
+# 로컬 보호 저장소 (plumb.config.json store). 실제는 ~/.plumb/stores/
+.plumb-store/
+.work/
