@@ -152,7 +152,7 @@ describe('plumb views', () => {
     );
     // 결과 열은 60칸에서 잘리고(…), 전문은 요약 아래 사유 줄에
     expect(result.stdout).toMatch(/^verification\s+실패\(생성\): View verification: 생성 실패/m);
-    expect(result.stdout).toMatch(/^changelog\s+아직 없음 \(M8 #58\)/m);
+    expect(result.stdout).toMatch(/^changelog\s+아직 없음/m);
     expect(result.stdout).toMatch(/^flow\s+아직 없음/m);
     expect(result.stdout).toContain('View 갱신: 1 생성 · 1 실패 · 4 아직 없음');
     expect(result.stdout).toContain('  verification: View verification: 생성 실패 — JUnit 없음');

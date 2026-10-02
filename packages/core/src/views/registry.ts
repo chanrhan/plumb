@@ -4,12 +4,12 @@
  * `VIEW_NAMES` 여섯 개를 전부 돌되, 여기 등록되지 않은 이름은 "아직 없음"(`skipped: 'not-implemented'`)으로 적는다 —
  * 빈 자리를 목 데이터로 채우지 않는다 (CLAUDE.md "하지 않는 것"). 새 생성기는 **정적 import 한 줄 + 표에 한 줄**로 붙는다.
  *
- * `changelog`(#58)는 이 PR과 동시에 진행 중이라 아직 파일이 없다. 머지되면:
- *   import { changelogView } from './changelog.js';   →   changelog: changelogView,
+ * 여섯 개 모두 등록됨 (#54 #55 #56 #57 #58 #59).
  */
 
 import type { View, ViewName } from '../types/index.js';
 import { architectureView } from './architecture.js';
+import { changelogView } from './changelog.js';
 import { contractView } from './contract.js';
 import { dependenciesView } from './dependencies.js';
 import { flowGenerator } from './flow.js';
@@ -22,6 +22,7 @@ export type ViewGeneratorMap = Partial<Record<ViewName, ViewGenerator<View>>>;
 export const VIEW_GENERATORS: ViewGeneratorMap = {
   architecture: architectureView,
   flow: flowGenerator,
+  changelog: changelogView,
   verification: verificationView,
   dependencies: dependenciesView,
   contract: contractView,
@@ -34,9 +35,7 @@ export const VIEW_GENERATORS: ViewGeneratorMap = {
 export const TEST_RUNNER_VIEWS: ReadonlySet<ViewName> = new Set<ViewName>(['flow']);
 
 /** 미구현 View가 들어올 마일스톤 · 이슈 (화면 5절 "M? 에서 구현") */
-export const VIEW_PLANNED_IN: Partial<Record<ViewName, string>> = {
-  changelog: 'M8 #58',
-};
+export const VIEW_PLANNED_IN: Partial<Record<ViewName, string>> = {};
 
 export function isViewImplemented(name: ViewName, generators: ViewGeneratorMap = VIEW_GENERATORS): boolean {
   return generators[name] !== undefined;
