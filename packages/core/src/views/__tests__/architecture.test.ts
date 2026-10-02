@@ -509,7 +509,7 @@ describe('architectureView — examples/testbed 실제 실행 (nextjsAdapter)', 
     expect(edge?.imports.every((s) => s.viaPublic)).toBe(true);
   });
 
-  it('L0: db 노드(PostgreSQL) + payment → db 간선, 미분류 0, 검사 기록 없음 → ⬜, git은 있다 → impact 커밋', () => {
+  it('L0: db 노드(PostgreSQL) + payment → db 간선, 미분류 0, 검사 기록 없음 → ⬜, impact는 git 이력에 따라', () => {
     expect(view.blocks.find((b) => b.id === 'db')).toMatchObject({ level: 'L0', kind: 'db', label: 'PostgreSQL' });
     expect(view.infraEdges).toEqual([
       { from: 'payment', to: 'db', via: { kind: 'package', name: '@prisma/client' }, blocks: ['payment'] },
@@ -520,14 +520,25 @@ describe('architectureView — examples/testbed 실제 실행 (nextjsAdapter)', 
     expect(view.requiredChecks.lastCheck).toBeUndefined();
     expect(view.extractionError).toBeUndefined();
     expect(view.configMissing).toBe(false);
-    // testbed는 이 레포 안에 있다 — 커밋이 둘 이상이므로 영향 범위를 잴 수 있다
-    expect(view.impact).toMatchObject({ commit: expect.stringMatching(/^[0-9a-f]{40}$/) });
-    expect(view.header.sources.at(-1)?.kind).toBe('git');
+    // testbed는 이 레포 안에 있다. 커밋이 둘 이상이면(로컬) 영향 범위를 잰다. CI의 얕은 체크아웃(depth 1)은 HEAD~1이
+    // 없어 unavailable — 둘 다 허용하되, 어느 쪽이든 git 출처는 impact와 함께 있거나 함께 없다
+    if ('unavailable' in view.impact) {
+      expect(view.impact).toEqual({ unavailable: 'no-git' });
+      expect(view.requiredChecks.signatureChanges).toEqual({ unavailable: 'no-git' });
+      expect(view.header.sources.some((s) => s.kind === 'git')).toBe(false);
+    } else {
+      expect(view.impact.commit).toMatch(/^[0-9a-f]{40}$/);
+      expect(view.requiredChecks.signatureChanges).toEqual({ changes: [] });
+      expect(view.header.sources.at(-1)).toEqual({ kind: 'git', commit: view.impact.commit, input: 'HEAD~1..HEAD' });
+    }
   });
 
   it('Markdown: Mermaid 펜스 2개 · "미분류 파일" · 출처 표시줄', () => {
     expect(md.startsWith('# 아키텍처\n\n출처: 파서: dependency-cruiser ')).toBe(true);
-    expect(md).toContain(' · 파서: plumb.config.json · git: ');
+    expect(md).toContain(' · 파서: plumb.config.json');
+    expect(md).toContain('\n## 변경 영향 범위\n\n');
+    if ('unavailable' in view.impact) expect(md).toContain('\n\ngit 이력 없음 — 커밋이 하나뿐이거나 git이 없다');
+    else expect(md).toContain(` · git: ${view.impact.commit.slice(0, 7)} (HEAD~1..HEAD)`);
     expect(md.match(/^```mermaid$/gm)).toHaveLength(2);
     expect(md).toContain('## 미분류 파일 0개');
     expect(md).toContain('subgraph system["앱: @plumb/testbed"]');
