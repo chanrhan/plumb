@@ -34,12 +34,16 @@ const calls: Record<(typeof ADAPTER_METHODS)[number], (a: Adapter) => Promise<un
 };
 
 const expectedMilestone: Record<(typeof ADAPTER_METHODS)[number], string> = {
-  extractDependencies: 'M8',
+  extractDependencies: 'done',
   generateStubs: 'M4',
-  runTests: 'M5',
+  runTests: 'done',
   readSchemas: 'M8',
   collectTraces: 'M8',
 };
+
+/** 구현된 메서드. 실제 동작은 `run-tests.test.ts`(#44) · `extract-dependencies.test.ts`(#45)가 testbed로 검증한다 */
+const IMPLEMENTED: ReadonlyArray<(typeof ADAPTER_METHODS)[number]> = ['runTests', 'extractDependencies'];
+const NOT_IMPLEMENTED = ADAPTER_METHODS.filter((method) => !IMPLEMENTED.includes(method));
 
 describe('@plumb/adapter-nextjs — Adapter 인터페이스 준수', () => {
   it('이름이 "nextjs"다', () => {
@@ -54,7 +58,7 @@ describe('@plumb/adapter-nextjs — Adapter 인터페이스 준수', () => {
     }
   });
 
-  it.each(ADAPTER_METHODS)('%s 은(는) 예정 마일스톤을 적은 NotImplementedError를 던진다', async (method) => {
+  it.each(NOT_IMPLEMENTED)('%s 은(는) 예정 마일스톤을 적은 NotImplementedError를 던진다', async (method) => {
     const promise = calls[method](nextjsAdapter);
 
     await expect(promise).rejects.toBeInstanceOf(NotImplementedError);
