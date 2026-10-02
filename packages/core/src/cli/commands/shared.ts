@@ -3,10 +3,11 @@
  *
  * 흐름은 모든 명령이 같다: `--target` → `loadConfig` → `openStore(config, root)` → `init()`(멱등) → 본체.
  * 종료 코드: 0 성공 · 1 설정 · 저장소 오류 · 2 입력 문제(사유 없음, 제안 여럿, 스키마 위반, 없는 규칙) · 3 사전 승인 필요(M10) ·
- * 4 `rule list --strict`에서 변조 증거.
+ * 4 `rule list --strict`에서 변조 증거. `check --strict`(#47)는 🔴 있음 4 · 변조 5 · 러너 실패 6 (`commands/check.ts`).
  */
 
 import type { Command } from 'commander';
+import type { AdapterLoader } from '../../adapter/load.js';
 import { ConfigError, type LoadedConfig, loadConfig, type ParsedPlumbConfig } from '../../config/index.js';
 import {
   openStore,
@@ -42,6 +43,8 @@ export interface CliContext {
   home?: string;
   /** 기록 시각. 테스트가 바꾼다 */
   now?: () => Date;
+  /** 어댑터 로더 (`plumb check`). 기본 `adapter/load.ts`의 `loadAdapter`. 테스트는 가짜 어댑터를 넣는다 */
+  loadAdapter?: AdapterLoader;
 }
 
 export interface OpenedStore {

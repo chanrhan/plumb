@@ -13,7 +13,7 @@
   "stopBlockLimit": 5,
   "diffSearch": { "numRuns": 1000, "seed": 20261001 },
   "blocks": {
-    "payment": { "include": ["src/domains/payment/**"], "risk": "high" },
-    "auth": { "include": ["src/domains/auth/**"] }
+    "payment": { "include": ["src/domains/payment/**"], "dependsOn": [], "risk": "high" },
+    "auth": { "include": ["src/domains/auth/**"], "dependsOn": [] }
   }
 }

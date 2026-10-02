@@ -7,7 +7,11 @@
  *   매핑은 {@link SOURCE_PREFIX} 한 곳뿐이다
  */
 
+import { STATUS_ICON, shortCommit } from '../checks/run-check.js';
 import type { Anchor, RuleStatus, SourceKind, SourceRef } from '../types/index.js';
+
+/** 정본은 `checks/run-check.ts`(#47). View 생성기가 같은 아이콘·축약을 쓰도록 여기서도 내보낸다 */
+export { STATUS_ICON, shortCommit };
 
 // ---------------------------------------------------------------------------
 // 이스케이프 · 기본 블록
@@ -125,11 +129,6 @@ export const SOURCE_PREFIX: Record<SourceKind, string> = {
   'user-input': '사용자 입력:',
 };
 
-/** 7자리 축약 (work-views 3절 "마지막 생성 커밋 — 7자리 축약") */
-export function shortCommit(commit: string): string {
-  return commit.length > 7 ? commit.slice(0, 7) : commit;
-}
-
 /**
  * 출처 하나. `파서: dependency-cruiser 18.5 (src)` · `실행: vitest-junit (reports/junit.xml)` · `저장소: rules.yaml` ·
  * `git: a1b2c3d (HEAD~1..HEAD)` · `사용자 입력: ?block=payment`. git이 아닌 출처의 커밋은 `@a1b2c3d`로 뒤에 붙는다.
@@ -159,15 +158,6 @@ export function sourceBar(sources: readonly SourceRef[]): string {
 // ---------------------------------------------------------------------------
 // 상태 아이콘 (rules.ts `RuleStatus` 주석의 다섯 아이콘)
 // ---------------------------------------------------------------------------
-
-/** 🟢 pass-verified · 🟡 pass-unverified · 🟠 recheck · 🔴 fail · ⬜ unchecked */
-export const STATUS_ICON: Record<RuleStatus, string> = {
-  'pass-verified': '🟢',
-  'pass-unverified': '🟡',
-  recheck: '🟠',
-  fail: '🔴',
-  unchecked: '⬜',
-};
 
 export function statusIcon(status: RuleStatus): string {
   return STATUS_ICON[status];

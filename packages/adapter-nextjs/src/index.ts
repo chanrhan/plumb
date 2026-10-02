@@ -2,8 +2,8 @@
  * `@plumb/adapter-nextjs` — 첫 어댑터 뼈대 (이슈 #8, 기획안 §4.4).
  *
  * 대상 스택: Next.js + PostgreSQL + Prisma + Vitest + fast-check + Playwright + dependency-cruiser + OpenTelemetry.
- * 구현된 메서드: `extractDependencies`(#45) · `runTests`(#44) · `collectTraces`(#59). 나머지는 {@link NotImplementedError}를 던지며,
- * 구현 마일스톤은 `docs/ROADMAP.md` — M4 generateStubs · M8 readSchemas.
+ * 구현된 메서드: `extractDependencies`(#45) · `runTests`(#44) · `readSchemas`(#55) · `collectTraces`(#59). 나머지는 {@link NotImplementedError}를 던지며,
+ * 구현 마일스톤은 `docs/ROADMAP.md` — M4 generateStubs.
  * 인터페이스 밖의 추가 능력: 정적 호출 그래프 `buildCallGraph`(#59, 코어 `CallGraphProvider`) — 흐름도 View가 덕 타이핑으로 찾는다.
  */
 
@@ -17,11 +17,13 @@ import {
 import { buildCallGraph } from './call-graph.js';
 import { collectTraces } from './collect-traces.js';
 import { extractDependencies } from './extract-dependencies.js';
+import { readSchemas } from './read-schemas.js';
 import { runTests } from './run-tests.js';
 
 export * from './call-graph.js';
 export * from './collect-traces.js';
 export * from './extract-dependencies.js';
+export * from './read-schemas.js';
 export { runTests } from './run-tests.js';
 export {
   DEPCRUISE_REF_PREFIX,
@@ -50,10 +52,8 @@ export const nextjsAdapter: Adapter & CallGraphProvider = {
   /** Vitest → JUnit XML + 가로챈 출력 (#44). 정적 검사(depcruise)는 인터페이스 밖의 {@link runStaticChecks}로 따로 부른다 */
   runTests,
 
-  /** OpenAPI · Prisma DMMF · AsyncAPI 파싱. M8 wave 0 */
-  async readSchemas() {
-    throw new NotImplementedError('readSchemas', 'M8');
-  },
+  /** OpenAPI(yaml) · Prisma DMMF(`@prisma/internals`) · AsyncAPI 파싱 → `SchemaSet` (#55, `read-schemas.ts`) */
+  readSchemas: (ctx) => readSchemas(ctx),
 
   /** Vitest + `instrumentation-test.ts` → `reports/traces/*.jsonl` → 스팬. 파일이 없으면 `unavailable` (#59, `collect-traces.ts`) */
   collectTraces: (ctx, opts) => collectTraces(ctx, opts),
