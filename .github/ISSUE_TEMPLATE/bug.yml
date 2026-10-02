@@ -1,0 +1,41 @@
+name: 버그 (bug)
+description: 기대와 다르게 동작한다
+title: "[버그] "
+labels: ["type/bug"]
+body:
+  - type: input
+    id: milestone
+    attributes:
+      label: 관련 마일스톤
+      placeholder: M5 검사 실행 연결
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 재현 절차
+      description: 명령 순서. 가능하면 testbed 기준
+      placeholder: |
+        1. cd examples/testbed
+        2. plumb check
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제
+      description: 출력 마지막 20줄 정도
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: 커밋
+      placeholder: a1b2c3d
