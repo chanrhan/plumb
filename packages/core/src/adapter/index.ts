@@ -1,4 +1,12 @@
 export { NotImplementedError, UnknownAdapterError } from './errors.js';
+export {
+  ADAPTER_PACKAGES,
+  AdapterLoadError,
+  type AdapterLoader,
+  type LoadedAdapter,
+  loadAdapter,
+  monorepoAdapterEntry,
+} from './load.js';
 export { clearAdapters, listAdapters, registerAdapter, resolveAdapter } from './registry.js';
 export type {
   Adapter,
