@@ -1,7 +1,8 @@
 /**
  * `plumb` 명령 트리 (기획안 §4.3). 진입점 `index.ts`와 분리해 테스트가 `exitOverride()`로 파싱만 검증할 수 있게 한다.
  *
- * 구현된 명령은 `commands/`에 있다 (`rule` · `approve` — M3, 이슈 #32 · `ui` — #33 · `check` — M5, #47). 나머지는 이름만 등록한다. 본체는 각 마일스톤에서
+ * 구현된 명령은 `commands/`에 있다 (`rule` · `approve` — M3, 이슈 #32 · `ui` — #33 · `check` — M5, #47 · `views` · `open` — M8, #60).
+ * 나머지는 이름만 등록한다. 본체는 각 마일스톤에서
  * 채운다 (`docs/ROADMAP.md`). 그때까지는 stderr에 "아직 구현되지 않음 (M?)" 한 줄을 쓰고 exit 2 — 0(성공)도 1(실패)도 아닌
  * "할 수 없음"이다.
  */
@@ -9,11 +10,14 @@
 import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import type { AdapterLoader } from '../adapter/load.js';
+import type { ViewGeneratorMap } from '../views/registry.js';
 import { registerApproveCommand } from './commands/approve.js';
 import { registerCheckCommand } from './commands/check.js';
+import { registerOpenCommand } from './commands/open.js';
 import { registerRuleCommand } from './commands/rule.js';
 import type { CliContext, Writer } from './commands/shared.js';
 import { registerUiCommand } from './commands/ui.js';
+import { registerViewsCommand } from './commands/views.js';
 
 /** 아직 구현되지 않은 하위 명령. `milestone`은 ROADMAP의 마일스톤 */
 export interface StubCommand {
@@ -29,8 +33,6 @@ export const COMMAND_ORDER: readonly string[] = ['init', 'rule', 'approve', 'run
 export const STUB_COMMANDS: readonly StubCommand[] = [
   { name: 'init', description: '대상 레포에 plumb.config.json을 만든다', milestone: 'M10' },
   { name: 'run', description: '승인된 규칙으로 파이프라인을 실행한다', milestone: 'M6' },
-  { name: 'views', description: 'View 6개를 다시 만든다', milestone: 'M8' },
-  { name: 'open', description: 'View를 브라우저로 연다', milestone: 'M8' },
 ];
 
 /** 미구현 명령의 종료 코드 */
@@ -53,8 +55,10 @@ export interface CreateProgramOptions {
   home?: string;
   /** 기록 시각. 테스트가 바꾼다 */
   now?: () => Date;
-  /** `plumb check`의 어댑터 로더. 기본 `loadAdapter`(동적 import). 테스트는 가짜 어댑터를 넣는다 */
+  /** `plumb check` · `plumb views`의 어댑터 로더. 기본 `loadAdapter`(동적 import). 테스트는 가짜 어댑터를 넣는다 */
   loadAdapter?: AdapterLoader;
+  /** `plumb views` · `check --views`의 생성기 표. 기본 `VIEW_GENERATORS`. 테스트는 가짜를 넣는다 */
+  viewGenerators?: ViewGeneratorMap;
 }
 
 /** 미구현 명령이 stderr에 쓰는 한 줄 */
@@ -80,6 +84,7 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     ...(options.home === undefined ? {} : { home: options.home }),
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.loadAdapter === undefined ? {} : { loadAdapter: options.loadAdapter }),
+    ...(options.viewGenerators === undefined ? {} : { viewGenerators: options.viewGenerators }),
   };
 
   const program = new Command('plumb')
@@ -98,8 +103,14 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       case 'check':
         registerCheckCommand(program, ctx);
         break;
+      case 'views':
+        registerViewsCommand(program, ctx);
+        break;
       case 'ui':
         registerUiCommand(program, { exit: ctx.exit, stderr: ctx.stderr });
+        break;
+      case 'open':
+        registerOpenCommand(program, ctx);
         break;
       default: {
         const stub = STUB_COMMANDS.find((s) => s.name === name);

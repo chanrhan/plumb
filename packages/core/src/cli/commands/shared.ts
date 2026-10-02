@@ -18,6 +18,7 @@ import {
   ValidationError,
 } from '../../store/index.js';
 import type { ApprovalState, Proposal, Rule, RuleKind } from '../../types/index.js';
+import type { ViewGeneratorMap } from '../../views/registry.js';
 
 export const EXIT_OK = 0;
 export const EXIT_ERROR = 1;
@@ -43,8 +44,10 @@ export interface CliContext {
   home?: string;
   /** 기록 시각. 테스트가 바꾼다 */
   now?: () => Date;
-  /** 어댑터 로더 (`plumb check`). 기본 `adapter/load.ts`의 `loadAdapter`. 테스트는 가짜 어댑터를 넣는다 */
+  /** 어댑터 로더 (`plumb check` · `plumb views`). 기본 `adapter/load.ts`의 `loadAdapter`. 테스트는 가짜 어댑터를 넣는다 */
   loadAdapter?: AdapterLoader;
+  /** View 생성기 표 (`plumb views` · `check --views`). 기본 `views/registry.ts`의 `VIEW_GENERATORS`. 테스트는 가짜를 넣는다 */
+  viewGenerators?: ViewGeneratorMap;
 }
 
 export interface OpenedStore {

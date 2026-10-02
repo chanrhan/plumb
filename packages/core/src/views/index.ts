@@ -8,6 +8,7 @@ export * from './changelog.js';
 export * from './contract.js';
 export * from './dependencies.js';
 export * from './flow.js';
+export * from './generate.js';
 export * from './header.js';
 export * from './markdown.js';
 export * from './types.js';
