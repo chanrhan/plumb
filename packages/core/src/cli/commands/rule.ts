@@ -2,9 +2,12 @@
  * `plumb rule list | show | propose | reject` (이슈 #32, 기획안 §4.3 · §4.5 · §9.1).
  *
  * - `list`: 상단에 저장소 상태 한 줄(`storeStatus()`: 정상 · 변조 · 미확인, 미확인 n건 · 최장 d일), 그 아래 표.
- *   열은 work-approve 3.1과 같다 — ID · 블록 · 종류 · 상태(M5 전까지 전부 ⬜) · 승인 · ⚠ 미확인 · ⚡ 고위험.
+ *   열은 work-approve 3.1과 같다 — ID · 블록 · 종류 · 상태 · 승인 · ⚠ 미확인 · ⚡ 고위험.
+ *   상태 열은 마지막 `plumb check`가 쓴 `rule-status/<id>.json`(`store.ruleStatus.get`)에서 읽는다 — 아이콘 + 사유. 기록이 없으면
+ *   ⬜ `not-run` "아직 안 돌림" (#47). 승인 행위는 상태를 바꾸지 않는다 (§7.3).
  *   조회이므로 변조여도 exit 0. `--strict`면 변조 증거에 exit 4 (CI · git hook용).
- * - `show <id>`: 진술 · 출처 · 의존 · checks(대상 레포에 파일이 있는지) · 결정 ID · 제안 목록 · 승인 이력.
+ * - `show <id>`: 진술 · 출처 · 의존(각각의 상태) · checks(대상 레포에 파일이 있는지 + 마지막 검사의 결과) · 상태(마지막 검사 커밋 ·
+ *   시각 · 사유 · 실패면 `file:line`) · 결정 ID · 제안 목록 · 승인 이력.
  * - `propose --file <json>`: 제안 JSON을 코어 `proposalSchema`로 검증해 `proposals/`에 기록. drafter 없이 사람이 제안을 넣는 길.
  * - `reject <id> --proposal <p-id> --reason "..."`: 사유 없으면 exit 2. 제안이 하나뿐이면 `--proposal` 생략 가능.
  *
@@ -14,6 +17,7 @@
 import { access, readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import type { Command } from 'commander';
+import { anchorText, describeStatusDetail, NOT_RUN_DETAIL, STATUS_ICON, shortCommit } from '../../checks/run-check.js';
 import type { ParsedPlumbConfig } from '../../config/index.js';
 import {
   type ApprovalRecord,
@@ -23,7 +27,17 @@ import {
   type StoreStatus,
   ValidationError,
 } from '../../store/index.js';
-import type { ApprovalState, Proposal, Rule, RuleId, RuleListItem } from '../../types/index.js';
+import type {
+  ApprovalState,
+  CheckResult,
+  CheckRun,
+  Proposal,
+  Rule,
+  RuleId,
+  RuleListItem,
+  RuleStatusDetail,
+  RuleStatusRecord,
+} from '../../types/index.js';
 import {
   APPROVAL_LABEL,
   CHANGE_KIND_LABEL,
@@ -57,6 +71,25 @@ export interface RuleRow extends Omit<RuleListItem, 'approval'> {
   inRules: boolean;
   /** 열린 제안 수 */
   openProposals: number;
+  /** 상태와 근거 (`rule-status/<id>.json`). 기록이 없으면 ⬜ not-run */
+  statusDetail: RuleStatusDetail;
+}
+
+/** 상태 기록 → 목록 행의 `status` · `statusDetail` · `statusAt` */
+export function statusFieldsOf(
+  record: RuleStatusRecord | undefined,
+): Pick<RuleRow, 'status' | 'statusDetail'> & Pick<RuleListItem, 'statusAt'> {
+  if (record === undefined) return { status: 'unchecked', statusDetail: NOT_RUN_DETAIL };
+  return {
+    status: record.detail.status,
+    statusDetail: record.detail,
+    statusAt: { commit: record.commit, checkedAt: record.checkedAt },
+  };
+}
+
+/** 상태 한 칸 `⬜ 검사 파일 없음` (아이콘 + 사유) */
+export function statusCell(detail: RuleStatusDetail): string {
+  return `${STATUS_ICON[detail.status]} ${describeStatusDetail(detail)}`;
 }
 
 /** 규칙의 승인 상태. 열린 제안이 있으면 잠정, 아니면 마지막 승인 기록의 행위 */
@@ -91,7 +124,7 @@ export async function collectRows(store: Store, config: Pick<ParsedPlumbConfig, 
       blockKnown: shown.block !== undefined && config.blocks?.[shown.block] !== undefined,
       kind: shown.kind,
       statement: shown.statement,
-      status: 'unchecked',
+      ...statusFieldsOf(await store.ruleStatus.get(id)),
       approval: approvalStateOf(history, own),
       highRisk: isHighRiskRule(shown, config),
       ...(latestOpen?.applied === 'pending' ? { pendingProposal: latestOpen.id } : {}),
@@ -110,7 +143,7 @@ const LIST_COLUMNS: Column<RuleRow>[] = [
     cell: (row) => (row.block === undefined ? '-' : row.blockKnown ? row.block : `?${row.block}`),
   },
   { header: '종류', width: 4, cell: (row) => KIND_SHORT[row.kind] },
-  { header: '상태', width: 4, cell: () => '⬜' },
+  { header: '상태', width: 24, cell: (row) => statusCell(row.statusDetail) },
   { header: '승인', width: 8, cell: (row) => APPROVAL_LABEL[row.approval] },
   { header: '미확인', width: 6, cell: (row) => (row.approval === 'provisional' ? '⚠' : '') },
   { header: '고위험', width: 6, cell: (row) => (row.highRisk ? '⚡' : '') },
@@ -178,18 +211,38 @@ async function showRule(ctx: CliContext, opened: OpenedStore, id: RuleId, option
   const approval = approvalStateOf(history, proposals);
 
   const serviceRoot = resolve(loaded.root, config.service);
+  const record = await store.ruleStatus.get(id);
+  const latest: CheckRun | null = await store.checks.latest();
   const checks = await Promise.all(
-    (shown?.checks ?? []).map(async (check) => ({
-      check,
-      exists: check.kind === 'acceptance' ? await exists(join(serviceRoot, check.ref)) : true,
-    })),
+    (shown?.checks ?? []).map(async (check) => {
+      const result: CheckResult | undefined = latest?.results.find((r) => r.check.ref === check.ref);
+      return {
+        check,
+        exists: check.kind === 'static' ? true : await exists(join(serviceRoot, check.ref)),
+        ...(result === undefined || latest === null
+          ? {}
+          : {
+              lastResult: {
+                outcome: result.outcome,
+                commit: latest.commit,
+                finishedAt: latest.finishedAt,
+                ...(result.failure === undefined ? {} : { anchor: result.failure.anchor }),
+              },
+            }),
+      };
+    }),
   );
   const rulesInStore = await store.rules.list();
-  const depends = (shown?.depends_on ?? []).map((depId) => ({
-    ruleId: depId,
-    exists: rulesInStore.some((r) => r.id === depId),
-    status: 'unchecked' as const,
-  }));
+  const depends = await Promise.all(
+    (shown?.depends_on ?? []).map(async (depId) => ({
+      ruleId: depId,
+      exists: rulesInStore.some((r) => r.id === depId),
+      status: (await store.ruleStatus.get(depId))?.detail.status ?? ('unchecked' as const),
+    })),
+  );
+  const statusDetail: RuleStatusDetail =
+    record?.detail ?? (checks.length === 0 ? { status: 'unchecked', reason: 'no-checks' } : NOT_RUN_DETAIL);
+  const statusAt = record === undefined ? undefined : { commit: record.commit, checkedAt: record.checkedAt };
   const decision =
     shown?.decision === undefined
       ? null
@@ -206,7 +259,9 @@ async function showRule(ctx: CliContext, opened: OpenedStore, id: RuleId, option
       ...(decision === null ? {} : { decision }),
       depends,
       checks,
-      status: { status: 'unchecked', reason: checks.length === 0 ? 'no-checks' : 'not-run' },
+      status: statusDetail,
+      ...(statusAt === undefined ? {} : { statusAt }),
+      ...(record === undefined ? {} : { history: record.history, since: record.since }),
       highRisk,
     });
     return EXIT_OK;
@@ -222,14 +277,44 @@ async function showRule(ctx: CliContext, opened: OpenedStore, id: RuleId, option
     lines.push(`  출처: ${shown.source}`);
     lines.push(`  승인: ${APPROVAL_LABEL[approval]}`);
     lines.push(
+      statusAt === undefined
+        ? `  상태: ${statusCell(statusDetail)} · 검사 기록 없음 (plumb check를 아직 안 돌림)`
+        : `  상태: ${statusCell(statusDetail)} · ${shortCommit(statusAt.commit)} · ${statusAt.checkedAt}`,
+    );
+    if (statusDetail.status === 'fail') {
+      for (const failure of statusDetail.failures) {
+        lines.push(`    실패: ${anchorText(failure.anchor)}  ${failure.message.split(/\r?\n/)[0] ?? ''}`);
+        if (failure.counterexample !== undefined || failure.seed !== undefined) {
+          lines.push(
+            `    fast-check 반례: ${failure.counterexample ?? '—'}${failure.seed === undefined ? '' : ` · 시드 ${failure.seed}`}`,
+          );
+        }
+      }
+    }
+    if (record !== undefined && record.history.length > 0) {
+      lines.push(
+        `  상태 이력: 최근 ${record.history.length}회 ${record.history.map((s) => STATUS_ICON[s]).join(' ')} · 이 상태 since ${record.since}`,
+      );
+    }
+    lines.push(
       depends.length === 0
         ? '  의존: 의존 없음'
-        : `  의존: ${depends.map((d) => `${d.ruleId}${d.exists ? '' : ' (저장소에 없음)'}`).join(', ')}`,
+        : `  의존: ${depends
+            .map((d) => `${d.ruleId} ${STATUS_ICON[d.status]}${d.exists ? '' : ' (저장소에 없음)'}`)
+            .join(', ')}`,
     );
     if (checks.length === 0) lines.push('  검사: 검사 없음 ⬜');
     else {
       lines.push('  검사:');
-      for (const c of checks) lines.push(`    ${c.check.kind} ${c.check.ref}${c.exists ? '' : ' — 파일 없음'} ⬜`);
+      for (const c of checks) {
+        const result =
+          c.lastResult === undefined
+            ? '검사 기록 없음'
+            : `${c.lastResult.outcome} · ${shortCommit(c.lastResult.commit)} · ${c.lastResult.finishedAt}${
+                c.lastResult.anchor === undefined ? '' : ` · ${anchorText(c.lastResult.anchor)}`
+              }`;
+        lines.push(`    ${c.check.kind} ${c.check.ref}${c.exists ? '' : ' — 파일 없음 ⬜'} · ${result}`);
+      }
     }
     lines.push(
       decision === null ? '  결정: 결정 기록 없음' : `  결정: ${decision.id}${decision.exists ? '' : ' (파일 없음)'}`,
@@ -243,7 +328,7 @@ async function showRule(ctx: CliContext, opened: OpenedStore, id: RuleId, option
       }`,
     );
   }
-  lines.push(history.length === 0 ? '  이력: 없음' : '  이력:');
+  lines.push(history.length === 0 ? '  승인 이력: 없음' : '  승인 이력:');
   for (const h of history) {
     lines.push(
       `    ${h.at}  ${h.action}  ${h.proposalId}  by ${h.by}${h.reason === undefined ? '' : `  사유: ${h.reason}`}`,

@@ -1,4 +1,4 @@
-import type { Approval, Rule } from '@plumb/core';
+import { type Approval, anchorText, describeStatusDetail, type Rule, STATUS_ICON, shortCommit } from '@plumb/core';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApprovePanel } from '@/components/rules/ApprovePanel';
@@ -8,19 +8,13 @@ import { isRuleId, readRuleDetail } from '@/lib/rules';
 
 export const dynamic = 'force-dynamic';
 
-const UNCHECKED_REASON = {
-  'no-checks': '검사 없음',
-  'check-missing': '검사 파일 없음',
-  unapproved: '미승인',
-  quarantined: '불안정 격리',
-  'not-run': '아직 안 돌림',
-} as const;
-
 const ACTION_LABEL: Record<Approval['action'], string> = { propose: '제안', approve: '승인', reject: '기각' };
 
 /**
  * 규칙 상세 (`/rules/[id]`, work-approve 3.2). 진술 · 출처 · 의존 · 검사 · 결정 기록 · 제안 diff · 승인 이력 · 승인/기각 패널.
  * 값은 전부 `readRuleDetail()`(코어 저장소)에서 온다. 규칙도 제안도 없으면 404.
+ * 검사 절은 마지막 `plumb check`의 상태 기록(#47): 사유 문구(view-verification 3.3 비고 — 코어 `describeStatusDetail`) ·
+ * 마지막 검사 커밋 · 시각 · 실패면 `file:line` + 메시지 (+ fast-check 반례 · 시드) · 검사 파일별 마지막 결과.
  */
 export default async function RuleDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: raw } = await params;
@@ -84,11 +78,33 @@ export default async function RuleDetailPage({ params }: { params: Promise<{ id:
         <h2>검사</h2>
         <p>
           <StatusIcon status={detail.status.status} statusAt={detail.statusAt} /> {STATUS_LABEL[detail.status.status]}
-          {detail.status.status === 'unchecked' ? ` — ${UNCHECKED_REASON[detail.status.reason]}` : null}
+          {` — ${describeStatusDetail(detail.status)}`}
           {detail.statusAt === undefined
             ? ' · 검사 없음'
-            : ` · ${detail.statusAt.commit} · ${shortTime(detail.statusAt.checkedAt)}`}
+            : ` · ${shortCommit(detail.statusAt.commit)} · ${shortTime(detail.statusAt.checkedAt)}`}
         </p>
+        {detail.status.status === 'fail' ? (
+          <ul className="rule-failures">
+            {detail.status.failures.map((failure) => (
+              <li key={`${failure.check.ref}:${anchorText(failure.anchor)}`}>
+                <code>{anchorText(failure.anchor)}</code> {failure.message.split(/\r?\n/)[0]}
+                {failure.counterexample === undefined && failure.seed === undefined ? null : (
+                  <small>
+                    {' '}
+                    · fast-check 반례: {failure.counterexample ?? '—'}
+                    {failure.seed === undefined ? '' : ` · 시드 ${failure.seed}`}
+                  </small>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {detail.history === undefined || detail.history.length === 0 ? null : (
+          <p>
+            이력: 최근 {detail.history.length}회 {detail.history.map((status) => STATUS_ICON[status]).join(' ')}
+            {detail.since === undefined ? '' : ` · 이 상태 since ${shortTime(detail.since)}`}
+          </p>
+        )}
         {detail.checks.length === 0 ? (
           <p>검사 없음</p>
         ) : (
@@ -101,7 +117,14 @@ export default async function RuleDetailPage({ params }: { params: Promise<{ id:
                     <span>⬜ 검사 없음</span>
                   ) : (
                     <span>
-                      {check.lastResult.outcome} · {check.lastResult.commit} · {shortTime(check.lastResult.finishedAt)}
+                      {check.lastResult.outcome} · {shortCommit(check.lastResult.commit)} ·{' '}
+                      {shortTime(check.lastResult.finishedAt)}
+                      {check.lastResult.anchor === undefined ? null : (
+                        <>
+                          {' '}
+                          · <code>{anchorText(check.lastResult.anchor)}</code>
+                        </>
+                      )}
                     </span>
                   )
                 ) : (
