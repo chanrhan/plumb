@@ -1,0 +1,26 @@
+import { defineConfig } from 'vitest/config';
+
+// .env는 git에 올라가지 않으므로(CI, 갓 clone한 환경) 없을 수 있다. prisma.config.ts와 같은 방식으로
+// 있으면 읽고, 없으면 .env.example과 같은 로컬 기본값을 둔다 — DB가 없어도 설정 로드 자체는 실패하지 않는다.
+try {
+  process.loadEnvFile('.env');
+} catch {
+  // .env 없음
+}
+const DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/testbed';
+
+export default defineConfig({
+  test: {
+    // src/**/*.test.ts: 구현자의 단위 테스트(규칙 근거 아님). test/**/*.spec.ts: 인수 테스트(테스트 작성자만, 기획안 §8.1)
+    include: ['src/**/*.test.ts', 'test/**/*.spec.ts'],
+    // JUnit 리포터는 항상 켠다. reports/junit.xml이 M5 `plumb check`의 입력이다 (기획안 §4.2 공통 형식)
+    reporters: ['default', 'junit'],
+    outputFile: { junit: 'reports/junit.xml' },
+    // 테스트가 0개여도(지금) 통과하고 junit.xml은 생긴다
+    passWithNoTests: true,
+    setupFiles: ['./test/setup.ts'],
+    env: { DATABASE_URL },
+    // DB를 쓰는 테스트는 파일 단위 프로세스 격리로 돌린다
+    pool: 'forks',
+  },
+});
