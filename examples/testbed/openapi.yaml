@@ -1,0 +1,165 @@
+# testbed의 API 계약 (기획안 §4.4 "외부에 노출하는 것은 Route Handler + OpenAPI로 통일", §5.1 계약은 표준 포맷으로 레포 안에).
+# 각 operation의 tags[0]가 소속 블록(src/domains/<블록>)이다. 계약 View는 이 값으로 블록 소속을 읽는다 (docs/screens/view-data-contract.md 3절).
+#
+# 의도적 불일치 (#20): POST /refunds 의 422 REFUND_WINDOW_EXCEEDED 는 계약에만 있고 코드는 아직 내지 않는다.
+# 규칙 `pay.refund-window` 승인 뒤 구현 에이전트가 채운다. 계약 변경 승인 직후 코드와 불일치 🔴가 정상 상태다 (기획안 §5.4).
+openapi: 3.1.0
+info:
+  title: Plumb testbed API
+  version: 0.1.0
+  summary: Plumb 시험용 결제·환불 API
+  description: |
+    Plumb 시험용 Next.js 프로젝트(`examples/testbed`)가 외부에 노출하는 Route Handler의 계약.
+    핸들러는 `src/app/api/<경로>/route.ts`에 있고, 각각 `src/domains/<블록>/index.ts`(공개 진입점)만 import한다.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: /api
+    description: 같은 origin의 Route Handler (`src/app/api/**/route.ts`). 로컬 `next dev`면 http://localhost:3000/api
+tags:
+  - name: payment
+    description: 결제·환불 블록 (`src/domains/payment`)
+security: []
+paths:
+  /payments:
+    post:
+      tags: [payment]
+      operationId: createPayment
+      summary: 결제 생성
+      description: 금액과 통화로 결제를 만든다. 생성된 결제의 상태는 `PAID`다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentBody'
+      responses:
+        '201':
+          description: 생성된 결제
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '400':
+          description: "요청 본문이 JSON이 아니거나 검증에 실패했다 (`code: VALIDATION_ERROR`)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /refunds:
+    post:
+      tags: [payment]
+      operationId: createRefund
+      summary: 환불 생성
+      description: |
+        결제 ID로 전액 환불을 만든다.
+
+        422 `REFUND_WINDOW_EXCEEDED`는 계약에만 있고 현재 구현은 내지 않는다 — 규칙 `pay.refund-window`가
+        승인되기 전까지 코드는 결제 시점과 무관하게 환불한다(#19 naive refund). 기획안 §5.4의 의도적 불일치 🔴.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRefundBody'
+      responses:
+        '201':
+          description: 생성된 환불
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Refund'
+        '400':
+          description: "요청 본문이 JSON이 아니거나 검증에 실패했다 (`code: VALIDATION_ERROR`)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: "결제가 없다 (`code: PAYMENT_NOT_FOUND`)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          # 계약에만 있음. 구현은 규칙 pay.refund-window 승인 뒤 (기획안 §5.4 의도적 불일치 🔴)
+          description: "환불 불가 — 환불 가능 기간이 지났다 (`code: REFUND_WINDOW_EXCEEDED`). 아직 구현되지 않았다."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: REFUND_WINDOW_EXCEEDED
+                message: 결제 후 7일이 지나 환불할 수 없습니다
+components:
+  schemas:
+    CreatePaymentBody:
+      type: object
+      required: [amount, currency]
+      additionalProperties: false
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+          description: 결제 금액 (최소 통화 단위의 정수)
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          description: ISO 4217 통화 코드 (3글자)
+          examples: [KRW]
+    CreateRefundBody:
+      type: object
+      required: [paymentId]
+      additionalProperties: false
+      properties:
+        paymentId:
+          type: string
+          minLength: 1
+          description: 환불할 결제의 ID
+    Payment:
+      type: object
+      required: [id, amount, currency, paidAt, status]
+      properties:
+        id:
+          type: string
+        amount:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        paidAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [PAID, REFUNDED]
+    Refund:
+      type: object
+      required: [id, paymentId, amount, requestedAt]
+      properties:
+        id:
+          type: string
+        paymentId:
+          type: string
+        amount:
+          type: integer
+          minimum: 1
+          description: 환불 금액. 현재 구현은 전액
+        requestedAt:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: 기계가 읽는 오류 코드
+          enum: [VALIDATION_ERROR, PAYMENT_NOT_FOUND, REFUND_WINDOW_EXCEEDED, INTERNAL_ERROR]
+        message:
+          type: string
+          description: 사람이 읽는 설명

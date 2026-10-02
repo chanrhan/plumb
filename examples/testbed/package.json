@@ -19,7 +19,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "openapi:lint": "redocly lint openapi.yaml"
   },
   "dependencies": {
     "@prisma/client": "^6",
@@ -29,6 +30,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
+    "@redocly/cli": "^2",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
