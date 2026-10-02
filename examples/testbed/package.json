@@ -6,8 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "typecheck": "tsc --noEmit",
+    "build": "prisma generate && next build",
+    "typecheck": "prisma generate && tsc --noEmit",
     "lint": "biome check .",
     "test": "echo \"test: #21 에서 vitest 설정\" && exit 0",
     "db:up": "docker compose up -d",
