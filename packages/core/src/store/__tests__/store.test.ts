@@ -101,11 +101,13 @@ describe('보호 저장소 — init → propose → approve → tamper', () => {
     expect(Object.keys(t.store.proposals).sort()).toEqual(['get', 'list', 'write']);
     expect(Object.keys(t.store.approvals).sort()).toEqual(['approve', 'history', 'reject']);
     expect(Object.keys(t.store.checks).sort()).toEqual(['latest', 'list', 'write']);
+    expect(Object.keys(t.store.contracts).sort()).toEqual(['approve', 'get', 'list']);
     expect(Object.keys(t.store.ruleStatus).sort()).toEqual(['get', 'list', 'write']);
     expect(Object.keys(t.store.views).sort()).toEqual(['list', 'read', 'write']);
     expect(Object.keys(t.store).sort()).toEqual([
       'approvals',
       'checks',
+      'contracts',
       'init',
       'paths',
       'proposals',
