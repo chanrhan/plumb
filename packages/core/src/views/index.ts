@@ -6,3 +6,4 @@
 export * from './header.js';
 export * from './markdown.js';
 export * from './types.js';
+export * from './verification.js';
