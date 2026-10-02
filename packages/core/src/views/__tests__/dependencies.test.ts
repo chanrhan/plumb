@@ -579,7 +579,10 @@ describe('examples/testbed — 실제 lockfile(importers["examples/testbed"]) + 
     expect(byName['react-dom']).toMatchObject({ scope: 'prod', importedBy: [], unused: true });
     expect(byName.vitest).toMatchObject({ scope: 'dev', unused: false });
     expect(byName.prisma).toMatchObject({ scope: 'dev' });
-    expect(view.summary.direct).toEqual({ total: 15, prod: 4, dev: 11 });
+    // testbed의 devDependencies는 다른 이슈가 늘릴 수 있다(#59 OTel 등) — prod 4는 고정, dev는 하한만
+    expect(view.summary.direct.prod).toBe(4);
+    expect(view.summary.direct.dev).toBeGreaterThanOrEqual(11);
+    expect(view.summary.direct.total).toBe(view.summary.direct.prod + view.summary.direct.dev);
     expect(view.summary.transitive).toBeGreaterThan(0);
     expect(view.summary.unusedDirect).toBe(1);
 

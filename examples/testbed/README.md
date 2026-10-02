@@ -12,7 +12,7 @@ Plumb의 시험용 Next.js 프로젝트다. Plumb이 실제 서비스 코드 위
 | 블록 | 비즈니스 로직은 `src/domains/<도메인>/`에 둔다. `app/`은 얇게 유지한다 | `app/`은 URL 경로 기준이라 도메인 경계와 맞지 않는다 |
 | 공개 진입점 | `app/`과 다른 도메인은 `src/domains/<도메인>/index.ts`만 import한다. 의존 규칙(dependency-cruiser, #21)으로 강제한다 | 경계는 부탁이 아니라 설정으로 |
 | 계약 | 외부에 노출하는 것은 Route Handler + OpenAPI(`openapi.yaml`)로 통일한다. Server Actions는 쓰지 않거나 내부용으로만 | 계약이 표준 포맷으로 레포 안에 있어야 검사할 수 있다 |
-| 트레이스 | `instrumentation.ts`로 OpenTelemetry 설정 (M8 spike. 아직 없음) | 실행 결과를 흐름 View로 보여 주기 위해 |
+| 트레이스 | 테스트 실행 중에는 `instrumentation-test.ts`(Vitest `setupFiles`)가 OpenTelemetry SDK를 띄워 블록 공개 진입점 · Prisma 스팬을 `reports/traces/*.jsonl`에 쓴다 (#59 spike → A안). `instrumentation.ts`(`next dev`/`start`용)는 아직 없다 | 실행 결과를 흐름 View로 보여 주기 위해 |
 
 ```
 examples/testbed/
