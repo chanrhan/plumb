@@ -2,14 +2,24 @@
  * `@plumb/adapter-nextjs` — 첫 어댑터 뼈대 (이슈 #8, 기획안 §4.4).
  *
  * 대상 스택: Next.js + PostgreSQL + Prisma + Vitest + fast-check + Playwright + dependency-cruiser + OpenTelemetry.
- * 구현된 메서드: `extractDependencies`(#45). 나머지는 {@link NotImplementedError}를 던지며,
- * 구현 마일스톤은 `docs/ROADMAP.md` — M4 generateStubs · M5 runTests · M8 readSchemas · collectTraces.
+ * 구현된 메서드: `extractDependencies`(#45) · `runTests`(#44). 나머지는 {@link NotImplementedError}를 던지며,
+ * 구현 마일스톤은 `docs/ROADMAP.md` — M4 generateStubs · M8 readSchemas · collectTraces.
  */
 
 import { type Adapter, type AdapterName, NotImplementedError, registerAdapter } from '@plumb/core';
 import { extractDependencies } from './extract-dependencies.js';
+import { runTests } from './run-tests.js';
 
 export * from './extract-dependencies.js';
+export { runTests } from './run-tests.js';
+export {
+  DEPCRUISE_REF_PREFIX,
+  type DepcruiseJson,
+  type DepcruiseViolation,
+  runStaticChecks,
+  type StaticCheckRun,
+  toStaticCheckResults,
+} from './static-checks.js';
 
 /** 등록 이름. `plumb.config.json`의 `adapter: "nextjs"` */
 export const ADAPTER_NAME: AdapterName = 'nextjs';
@@ -26,10 +36,8 @@ export const nextjsAdapter: Adapter = {
     throw new NotImplementedError('generateStubs', 'M4');
   },
 
-  /** Vitest(+ Playwright) → JUnit XML. M5 wave 0 */
-  async runTests() {
-    throw new NotImplementedError('runTests', 'M5');
-  },
+  /** Vitest → JUnit XML + 가로챈 출력 (#44). 정적 검사(depcruise)는 인터페이스 밖의 {@link runStaticChecks}로 따로 부른다 */
+  runTests,
 
   /** OpenAPI · Prisma DMMF · AsyncAPI 파싱. M8 wave 0 */
   async readSchemas() {
