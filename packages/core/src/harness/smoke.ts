@@ -18,7 +18,7 @@
  *      첫 턴 캐시 생성이 수만 토큰으로 뛴다(로컬 1차: 121,925 vs 클라우드 1,221). 둘 다 넘으면 `[smoke] 경고`
  *
  * 실행: `pnpm --filter @plumb/core smoke`
- * 실패 시 흔한 원인 — docs/harness-notes.md "2. 스모크 결과" 참고
+ * 실패 시 흔한 원인 — docs/harness-notes.md "2. 스모크 결과" 참고 (완료 증거: 2.6 로컬 `tools=1 (mcp 0)` · exit 0)
  *   · 인증 없음: `claude login` 또는 `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`
  *   · 번들 바이너리 없음(optional dependency 미설치): 아래 PATH_TO_CLAUDE 주석을 풀고 `which claude` 경로를 넣는다
  *   · 권한 프롬프트가 뜸: `allowedTools`에 Read가 있는데도 뜨면 그 사실을 노트에 적는다 (M4 입력)

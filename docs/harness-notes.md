@@ -1,6 +1,6 @@
 # 하네스 노트 — Agent SDK 스모크 (#10)
 
-기획안 §8.7(하네스는 Claude Agent SDK TypeScript를 처음부터 쓴다)과 §8.6(격리는 부탁이 아니라 설정으로)의 전제를 1회 호출로 확인한 기록이다. **M4(역할 3개 · 격리 · Stop hook) 이슈 등록의 입력**이다. `(채울 것)`은 로컬 실행 뒤 채운다. 실행 원문은 PR의 "검증 증거"에 붙인다.
+기획안 §8.7(하네스는 Claude Agent SDK TypeScript를 처음부터 쓴다)과 §8.6(격리는 부탁이 아니라 설정으로)의 전제를 1회 호출로 확인한 기록이다. **M4(역할 3개 · 격리 · Stop hook) 이슈 등록의 입력**이다. 실행 원문은 PR #74의 "검증 증거"에 있다.
 
 실행: `pnpm --filter @plumb/core smoke` (`packages/core/src/harness/smoke.ts`)
 
@@ -8,7 +8,7 @@
 
 | 항목 | 값 |
 |---|---|
-| OS · Node | 로컬: macOS(`/Users/chan/plumb`) · Node 22. 클라우드: Linux |
+| OS · Node | 로컬: macOS(Apple Silicon MacBook Air, `/Users/chan/plumb`) · Node 22. 클라우드: Linux |
 | `@anthropic-ai/claude-agent-sdk` | 0.3.288 (`pnpm ls --filter @plumb/core @anthropic-ai/claude-agent-sdk`) |
 | 번들 Claude Code 바이너리 | optional dependency `@anthropic-ai/claude-agent-sdk-<platform>` 0.3.288 — 별도 CLI 설치 불필요. 로컬·클라우드 모두 `[init] claude_code=2.1.288`로 번들이 쓰였다 |
 | 인증 방식 | 로컬: 구독(`claude login` OAuth) — `[init] apiKeySource=none`(API 키 아님) 상태로 모델이 응답했다(2.4). 클라우드: 세션 프록시 인증, 역시 `apiKeySource=none` |
@@ -18,12 +18,12 @@
 
 | 확인 항목 | 기대 | 실제 |
 |---|---|---|
-| SDK 호출 성공 | `[result] {"subtype":"success", …}` · exit 0 | 클라우드: 성공(2.1 · 2.3 · 2.5). 로컬·구독: 모델 응답·도구 호출은 됐으나 MCP 누수로 예산 초과(2.4) → 수정 후 (채울 것: 2.6) |
+| SDK 호출 성공 | `[result] {"subtype":"success", …}` · exit 0 | 클라우드: 성공(2.1 · 2.3 · 2.5). 로컬·구독: MCP 누수로 예산 초과(2.4) → 수정 후 **성공 · exit 0**(2.6) |
 | PreToolUse hook 가로채기 | stderr `[hook] PreToolUse Read …/packages/core/package.json` 1줄 | 클라우드: 확인(2.1). 로컬: 확인(2.2 · 2.4) |
 | 경로 차단 hook | 모델이 cwd 밖을 읽으려 하지 않으면 `[hook] deny` 줄 없음(정상). 있었다면 그 줄과 `permission_denials` 수 | 모든 실행에서 `deny` 줄 없음 · `permission_denials: 0`. 거부 자체의 실측은 M4 격리 시험에서 |
 | 권한 프롬프트 | 뜨지 않음(`allowedTools: ['Read']`) | 클라우드·로컬 모두 뜨지 않음 |
-| 비용·턴·시간 | `total_cost_usd`(추정) · `num_turns` · `duration_ms` · `usage` | 클라우드 $0.007~0.011 · 2턴 · 4~5초. 로컬(MCP 누수) $0.515 · 2턴 · 6초(2.4). 수정 후 로컬: (채울 것: 2.6) |
-| MCP · 컨텍스트 누수 | `[init] tools=1 (mcp 0)` · 첫 턴 `cache+` 수천 토큰 | 클라우드: `tools=1 (mcp 0)` · cache+ 1,221~2,194. 로컬 1차: **`tools=93 (mcp 92)` · cache+ 121,925**(2.4) → 수정 후 (채울 것: 2.6) |
+| 비용·턴·시간 | `total_cost_usd`(추정) · `num_turns` · `duration_ms` · `usage` | 클라우드 $0.007~0.011 · 2턴 · 4~5초. 로컬(MCP 누수) $0.515 · 2턴 · 6초(2.4). 수정 후 로컬(기본 모델 fable) $0.044 · 2턴 · 2.7초(2.6) |
+| MCP · 컨텍스트 누수 | `[init] tools=1 (mcp 0)` · 첫 턴 `cache+` 수천 토큰 | 클라우드: `tools=1 (mcp 0)` · cache+ 1,221~2,194. 로컬 1차: **`tools=93 (mcp 92)` · cache+ 121,925**(2.4) → 수정 후 **`tools=1 (mcp 0)` · cache+ 1,690**(2.6) |
 | 모델 답 | `[answer] …` 한 문장 | 모든 실행에서 "package.json의 첫 줄은 JSON 객체를 여는 중괄호 `{` …" — 로컬 2.4도 답은 맞았고 예산만 넘겼다 |
 
 ### 2.1 클라우드 세션(Claude Code 원격 환경)에서의 실행 — 2026-10-03
@@ -52,7 +52,7 @@
 ```
 
 - **확인됨**: 구독 인증으로 SDK가 돈다(모델이 응답하고 도구를 호출) · PreToolUse hook이 가로챈다 · `maxBudgetUsd`가 실행을 끊는다
-- **원인 가설**: 같은 호출이 클라우드(기본 모델 `claude-sonnet-5-5`)에서는 $0.007~0.011. 모델을 지정하지 않아 로컬 계정의 기본 모델(더 비싼 모델 또는 생각 토큰이 많은 설정)이 쓰였을 것 — 당시 스크립트는 모델을 출력하지 않아 확정 못 함
+- **원인 가설**: 같은 호출이 클라우드(기본 모델 `claude-sonnet-5-5`)에서는 $0.007~0.011. 모델을 지정하지 않아 로컬 계정의 기본 모델(더 비싼 모델 또는 생각 토큰이 많은 설정)이 쓰였을 것 — 당시 스크립트는 모델을 출력하지 않아 확정 못 함. **사후 확정(2.4 · 2.6)**: 주원인은 계정 MCP 커넥터 92개(×50), 부원인은 기본 모델 fable(×4)
 - **SDK 동작**: 오류 결과(`error_max_budget_usd`)를 result 메시지로 보낸 뒤 **예외로도 던진다**. 하네스는 예외 경로에서도 받아 둔 result를 회수해야 한다
 - **조치(같은 PR)**: `[init] model= apiKeySource=` 출력, 메시지별 `[usage]`, 예외 시에도 `[result]` 요약, 모델·예산을 `PLUMB_SMOKE_MODEL` · `PLUMB_SMOKE_BUDGET`로 덮어쓰기(기본 예산 0.5)
 
@@ -114,14 +114,29 @@ exit 0
 
 클라우드에는 계정 MCP가 없으므로 이 실행은 **수정이 기존 동작을 깨지 않음**만 보인다(`tools=1 (mcp 0)` 유지, 경고 없음). 누수가 막혔는지는 2.6에서만 증명된다.
 
-### 2.6 MCP 격리 수정 후 로컬 재실행 (채울 것)
+### 2.6 MCP 격리 수정 후 로컬 재실행 — 성공 (#10 완료 증거)
+
+`PLUMB_SMOKE_MODEL` 없이(계정 기본 모델) 실행.
 
 ```
-(git pull 후 PLUMB_SMOKE_MODEL 없이 pnpm --filter @plumb/core smoke — 기대: [init] tools=1 (mcp 0), cache+ 수천, total_cost_usd < $0.05, exit 0)
+[init] model=claude-fable-5-1 apiKeySource=none claude_code=2.1.288 permissionMode=default tools=1 (mcp 0) ["Read"] budget=$0.5
+[assistant] <tool_use Read>
+[usage] in 2 · cache+ 1690 · cache↺ 0 · out 16                              ← 2.4의 121,925 → 1,690
+[hook] PreToolUse Read /Users/chan/plumb/packages/core/package.json
+[assistant] package.json의 첫 줄은 JSON 객체를 여는 중괄호 `{` 하나입니다.
+[usage] in 2 · cache+ 127 · cache↺ 1690 · out 40
+[result] {"subtype":"success","num_turns":2,"duration_ms":2665,"total_cost_usd":0.0443,"is_error":false,
+          "usage":{"input_tokens":4,"cache_creation_input_tokens":1817,"cache_read_input_tokens":1690,"output_tokens":128,
+                   "cache_creation":{"ephemeral_1h_input_tokens":1817,"ephemeral_5m_input_tokens":0}, …},
+          "permission_denials":0}
+[answer] package.json의 첫 줄은 JSON 객체를 여는 중괄호 `{` 하나입니다.
+[smoke] wall 5238ms
+exit 0
 ```
 
-- `tools=1 (mcp 0)`이고 exit 0 → #10 완료 증거. 머지.
-- MCP 도구가 여전히 올라오면 `[smoke] 경고` 줄에 **막지 못한 서버 이름**이 찍힌다. 그 줄을 여기에 적고, (a) 도구 목록에서 빠지지 않는지(컨텍스트에 남음) vs (b) 호출만 막히는지를 구분한다 — (a)면 M4에서 OS 수준 격리(별도 `HOME`, 로그인 없는 프로필 + API 키)까지 가야 한다.
+- **MCP 격리 확인**: 같은 머신·같은 계정에서 `tools=93 (mcp 92)` → `tools=1 (mcp 0)`. `strictMcpConfig: true` + `mcpServers: {}`(+ `disallowedTools: ['mcp__*']`)가 계정 커넥터를 **도구 목록에서 제거**한다(호출만 막는 것이 아니라 컨텍스트에서 빠진다 — 캐시 생성 토큰이 1/72). OS 수준 격리까지 갈 필요 없음.
+- **기본 모델**: 로컬 계정 기본은 `claude-fable-5-1`. 토큰은 클라우드(`claude-sonnet-5-5`, 2.5)와 비슷한데(캐시 생성 1,817 vs 2,342) 비용은 $0.044 vs $0.011 — **약 4배**. 2.2의 "기본 모델이 비싸다" 가설은 부분적으로 맞았다: 2.2·2.4의 초과는 MCP 누수(×50) **와** 비싼 기본 모델(×4)이 겹친 것. 결정 6의 근거
+- 모든 확인 항목(2절 표) 로컬에서 충족: 구독 인증 · hook 가로채기 · 권한 프롬프트 없음 · `permission_denials: 0` · exit 0
 
 ## 3. 격리 옵션 대응표 (기획안 §8.6 세 겹 × SDK 옵션)
 
@@ -129,7 +144,7 @@ exit 0
 |---|---|---|---|
 | 컨텍스트 | 역할별 세션 · 시스템 프롬프트 · test-writer는 CLAUDE.md 미로드 | `systemPrompt: { type: 'custom' }` · `settingSources: []`(user/project/local settings와 CLAUDE.md 전부 미로드) | **실측**: 답에 CLAUDE.md 내용이 섞이지 않았고 캐시 생성 1,221~2,194 토큰(시스템 프롬프트 + Read 정의 크기) → settings·CLAUDE.md 미로드는 동작. 단 **계정 MCP는 이 옵션 밖**(아래 MCP 행) |
 | 도구 | 도구 목록 지정 · 경로 차단 hook | `tools: ['Read']` + `allowedTools` + `disallowedTools` · `hooks.PreToolUse` → `permissionDecision: 'deny'` | **실측**: 내장 도구는 Read 하나만 올라왔다(클라우드 `tools=1`). `tools:`는 **내장 도구만** 제한한다 — MCP 도구는 통과(2.4) |
-| MCP 커넥터 | (기획안에 명시 없음 — §8.6 "도구 목록 지정"에 포함돼야 함) | `strictMcpConfig: true` + `mcpServers: {}` + `disallowedTools: ['mcp__*']` | **실측(2.4)**: `settingSources: []`·`tools:`만으로는 계정 커넥터 92개가 올라옴. 수정 후 로컬: (채울 것: 2.6) |
+| MCP 커넥터 | (기획안에 명시 없음 — §8.6 "도구 목록 지정"에 포함돼야 함) | `strictMcpConfig: true` + `mcpServers: {}` + `disallowedTools: ['mcp__*']` | **실측(2.4)**: `settingSources: []`·`tools:`만으로는 계정 커넥터 92개가 올라옴. **수정 후 로컬 `mcp 0`**(2.6) — 도구 목록에서 제거되므로 SDK 옵션으로 충분 |
 | 하위 에이전트 금지 | 생성 깊이 1 | `disallowedTools: ['Agent', 'Task']` (+ `agents` 옵션을 주지 않는다) | 타입 확인. 실제 거부는 M4 격리 시험(#24 상당)에서 |
 | 파일시스템 | 역할별 worktree · OS 샌드박스(셸 명령만) | `cwd` · `sandbox?: SandboxSettings` 옵션 존재 | 타입에 있음. 내용(`allowUnsandboxedCommands`, 읽기·쓰기 경로 등)은 M4에서 실측 — **OS 샌드박스는 셸에만 적용되므로 파일 도구는 hook으로 따로 막는다(§8.6)** |
 | 예산·반복 | 역할별 상한, 넘으면 실패로 끝내 검토 대기열 | `maxBudgetUsd` · `maxTurns` → 결과 `subtype: 'error_max_budget_usd' \| 'error_max_turns'` | **실측**: 로컬·클라우드 모두 `error_max_budget_usd`로 끊긴다. SDK는 이를 예외로도 던진다 → 하네스는 예외에서도 result를 회수 |
@@ -148,11 +163,11 @@ exit 0
 
 ## 6. M4 이슈 등록에 넘길 결정·질문
 
-1. 역할별 `cwd`를 worktree로 두고 `settingSources: []`를 켜면 컨텍스트·도구 격리는 SDK 옵션만으로 충분한가 → **불충분**. settings·CLAUDE.md는 막히지만 계정 MCP는 안 막힌다(2.4). 7번을 더해야 하고, 그래도 안 막히는 것이 있으면(2.6) OS 수준으로 간다
+1. 역할별 `cwd`를 worktree로 두고 `settingSources: []`를 켜면 컨텍스트·도구 격리는 SDK 옵션만으로 충분한가 → **불충분**. settings·CLAUDE.md는 막히지만 계정 MCP는 안 막힌다(2.4). 7번을 더하면 충분하다(2.6: 로컬 `mcp 0`). OS 수준 격리는 불필요
 2. 경로 차단은 두 겹: 파일 도구(Read/Write/Edit/Glob/Grep)는 PreToolUse deny, 셸(Bash)은 `sandbox` 옵션 — Bash를 아예 `disallowedTools`에 넣는 역할(test-writer)과 허용하는 역할(implementer: 테스트 실행 필요)을 나눈다
 3. `permissionMode`: 역할 에이전트는 사람이 없으므로 `'default'` + `allowedTools`로 자동 허용되는지 → 클라우드 스모크에서는 프롬프트 없이 Read가 허용됐다. 목록 밖 도구를 모델이 요청할 때의 동작(거부 메시지로 돌아오는지, 멈추는지)은 M4 격리 시험에서 실측
 4. 인증: 본인 머신은 구독, 배포 시 API 키(§8.7). SDK 문서는 "제3자 제품에 claude.ai 로그인 제공은 승인 없이 불가"를 명시 — 기획안과 일치. `plumb.config.json`에 인증 방식을 적지 않고 환경(`claude login` / 환경변수)에 맡긴다
 5. zod 4 승격 여부(1절)
-6. **역할별 `model`을 `plumb.config.json roles.*.model`로 반드시 명시**한다. 계정 기본 모델에 맡기면 같은 작업의 비용이 기기마다 수십 배 달라진다(2.2) — 현재 testbed 설정의 `"model": "default"`는 M4에서 실제 모델 ID로 바꾼다
+6. **역할별 `model`을 `plumb.config.json roles.*.model`로 반드시 명시**한다. 계정 기본 모델에 맡기면 같은 작업의 비용이 기기마다 달라진다 — 실측: 로컬 기본 `claude-fable-5-1` $0.044 vs `claude-sonnet-5-5` $0.011, 같은 토큰에 **4배**(2.6). 현재 testbed 설정의 `"model": "default"`는 M4에서 실제 모델 ID로 바꾼다
 7. **모든 역할의 `query()`에 `strictMcpConfig: true` + `mcpServers: {}` + `disallowedTools: ['mcp__*']`를 고정**한다. MCP는 Plumb가 명시적으로 주는 것(있다면)만. 역할 공통부(M4 첫 이슈)에 넣고 역할별로 풀 수 없게 한다
 8. 하네스는 매 실행 `[init].tools`(개수 · MCP 개수)와 첫 턴 `cache_creation_input_tokens`를 로그에 남기고, MCP > 0 또는 캐시 생성 > 기준이면 **실행을 실패로 끝낸다**(경고가 아니라). §8.6 "격리가 실제로 동작하는지 첫 슬라이스에서 직접 시험"을 1회 시험이 아니라 상시 검사로 — 격리 누수는 비용으로 즉시 드러나므로 싸게 잡을 수 있다
