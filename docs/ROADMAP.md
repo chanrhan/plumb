@@ -14,10 +14,10 @@
 | 마일스톤 | 상태 | 비고 |
 |---|---|---|
 | M0 | 완료 | 와이어프레임 9장 + 타입 + 종이 시뮬레이션. 저장 형식 기본값 7건은 #17에서 사람 확인 대기 |
-| M1 | #10만 남음 | #10 SDK 스모크는 `env/local`. 사용자 머신에서 실행 후 `docs/harness-notes.md`가 M4 입력이 된다 |
+| M1 | 완료 | #10 SDK 스모크 로컬 통과(`tools=1 (mcp 0)` · exit 0). 발견: 계정 MCP 커넥터 92개가 `settingSources: []`로 안 막힘 → `strictMcpConfig`로 차단. `docs/harness-notes.md`가 M4 입력 |
 | M2 | 완료 | testbed: payment 도메인(naive refund), OpenAPI + Route Handler(422는 계약에만), Vitest(JUnit) + depcruise 블록 규칙 5개 |
 | M3 | #36만 남음 | 저장소 코어 · CLI(`rule`·`approve`) · UI 토큰 통로 · UI `/rules` · 결정 기록 완료. 쿠키 없는 승인 401 확인. #36 rule-drafter는 `env/local`(#10 뒤) |
-| M4 | 대기 | 전부 `env/local`. #10 결과(`docs/harness-notes.md`)가 입력 |
+| M4 | 이슈 등록 #75~#79 | 전부 `env/local`, 순차. 코드는 세션이 쓰고 SDK 실행은 사용자 머신에서(#10 방식). 노트 결정 7(모든 역할 `strictMcpConfig`) · 8(격리 상시 검사) 반영 |
 | M5 | 완료 | `plumb check`: Vitest JUnit + depcruise → 규칙별 상태 + 검사 범위 밖 → `checks/`·`rule-status/`. CLI 표와 UI `/rules` 상태 열 연결 |
 | M6 · M7 | 대기 | `env/local`(에이전트 실행). #10 뒤 |
 | M8 | #63 · #67만 남음 | View 6개 생성기 + `plumb views` + UI `/views`(Markdown·Mermaid, `plumb://open` 점프) 완료. testbed에서 `plumb check --views` → 12 파일. 흐름도는 spike 결과 A안(트레이스 + 정적) — 결정 #67 사람 확인 대기. #63 타입 보완 진행 중 |
@@ -78,15 +78,15 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 
 **종료 증거**: 격리 시험 스크립트 통과(test-writer의 `src/**` 읽기 거부, implementer의 `test/acceptance/**` 쓰기 거부) · 일부러 틀린 구현으로 implementer가 Stop hook에 막힌다
 
-| wave | 내용 |
-|---|---|
-| 0 | 역할 정의 공통부 (SDK 옵션, `.work/<role>/`, 하위 에이전트 금지, 예산·반복 상한) |
-| 1 | test-writer: `tsc --declaration` 스텁, CLAUDE.md 미로드, `src/**` 읽기 차단 hook |
-| 1 | implementer: `test/acceptance/**` · `.git` 쓰기 차단, 인터넷 차단 |
-| 2 | Stop hook 두 종류(전부 실패 / 전부 통과) + `stopBlockLimit` → 이의 제기 파일 |
-| 2 | 격리 시험 스크립트 `scripts/isolation-test.ts` |
+| wave | 이슈 | 내용 |
+|---|---|---|
+| 0 | #75 | 역할 공통부: `query()` 옵션 빌더(`strictMcpConfig` · `settingSources: []` · 하위 에이전트 금지 · 예산·반복 상한, `model: "default"` 거부) + 실행 래퍼(예외 경로에서도 result 회수) + 격리 상시 검사(MCP > 0 또는 첫 턴 캐시 > 10k → 실패) |
+| 1 | #76 | test-writer: `tsc --declaration` 스텁, CLAUDE.md 미로드, `src/**` 읽기 차단 hook, Bash 없음 |
+| 1 | #77 | implementer: `test/acceptance/**` · `.git` 쓰기 차단, 인터넷 차단(`sandbox` 실측) |
+| 2 | #78 | Stop hook 두 종류(전부 실패 / 전부 통과 또는 이의 제기) + `stopBlockLimit` → 이의 제기 파일 |
+| 2 | #79 | 격리 시험 스크립트 `scripts/isolation-test.ts` — 8항목 ✅ · testbed `git status` 깨끗 |
 
-전부 로컬. SDK 실행 자체가 시험 대상이므로 위임하지 않고 순차로 한다.
+전부 로컬. SDK 실행 자체가 시험 대상이므로 위임하지 않고 순차로 한다(#75 → #76·#77 → #78 → #79). 입력: `docs/harness-notes.md` 3절 대응표 · 6절 결정.
 
 ### M5 검사 실행 연결
 
@@ -151,4 +151,4 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 
 ## 이슈 등록 시점
 
-M0 · M1 · M2 · M3 · M5 · M8 이슈는 등록했다. M4 · M6 · M7은 #10 결과를 보고 등록한다. M2 이후는 **각 마일스톤을 시작할 때** 등록한다. 그 시점의 타입과 구조를 반영해야 범위와 범위 밖이 정확해지기 때문이다.
+M0 · M1 · M2 · M3 · M4 · M5 · M8 이슈는 등록했다. M6 · M7은 M4 격리 시험(#79)이 통과하면 등록한다. M2 이후는 **각 마일스톤을 시작할 때** 등록한다. 그 시점의 타입과 구조를 반영해야 범위와 범위 밖이 정확해지기 때문이다.
