@@ -62,11 +62,15 @@ describe('storePaths', () => {
       'views',
       'contracts',
       'review-queue',
+      'injections',
     ]) {
       expect(dirs).toContain(join(store, name));
     }
     expect(dirs).toContain(store);
-    expect(Object.values(STORE_LAYOUT)).toHaveLength(12);
+    expect(Object.values(STORE_LAYOUT)).toHaveLength(13);
+    expect(paths.injection('pay.refund-window', 'i-0001')).toBe(
+      join(store, 'injections', 'pay.refund-window', 'i-0001.json'),
+    );
   });
 
   it('경로 이탈 식별자는 거부한다', () => {

@@ -1,7 +1,7 @@
 /**
  * `plumb` 명령 트리 (기획안 §4.3). 진입점 `index.ts`와 분리해 테스트가 `exitOverride()`로 파싱만 검증할 수 있게 한다.
  *
- * 구현된 명령은 `commands/`에 있다 (`rule` · `approve` — M3, 이슈 #32 · `ui` — #33 · `check` — M5, #47 · `views` · `open` — M8, #60).
+ * 구현된 명령은 `commands/`에 있다 (`rule` · `approve` — M3, 이슈 #32 · `ui` — #33 · `check` — M5, #47 · `views` · `open` — M8, #60 · `run` · `runs` — M6, #87).
  * 나머지는 이름만 등록한다. 본체는 각 마일스톤에서
  * 채운다 (`docs/ROADMAP.md`). 그때까지는 stderr에 "아직 구현되지 않음 (M?)" 한 줄을 쓰고 exit 2 — 0(성공)도 1(실패)도 아닌
  * "할 수 없음"이다.
@@ -15,6 +15,7 @@ import { registerApproveCommand } from './commands/approve.js';
 import { registerCheckCommand } from './commands/check.js';
 import { registerOpenCommand } from './commands/open.js';
 import { registerRuleCommand } from './commands/rule.js';
+import { type RunCliDeps, registerRunCommands } from './commands/run.js';
 import type { CliContext, Writer } from './commands/shared.js';
 import { registerUiCommand } from './commands/ui.js';
 import { registerViewsCommand } from './commands/views.js';
@@ -27,18 +28,27 @@ export interface StubCommand {
 }
 
 /** `--help` 출력 순서. 첫 슬라이스 흐름(승인 → 실행 → 검사 → View) 순 */
-export const COMMAND_ORDER: readonly string[] = ['init', 'rule', 'approve', 'run', 'check', 'views', 'ui', 'open'];
+export const COMMAND_ORDER: readonly string[] = [
+  'init',
+  'rule',
+  'approve',
+  'run',
+  'runs',
+  'check',
+  'views',
+  'ui',
+  'open',
+];
 
 /** 아직 이름만 있는 명령. 구현되면 여기서 빠지고 `commands/`로 간다 */
 export const STUB_COMMANDS: readonly StubCommand[] = [
   { name: 'init', description: '대상 레포에 plumb.config.json을 만든다', milestone: 'M10' },
-  { name: 'run', description: '승인된 규칙으로 파이프라인을 실행한다', milestone: 'M6' },
 ];
 
 /** 미구현 명령의 종료 코드 */
 export const NOT_IMPLEMENTED_EXIT_CODE = 2;
 
-export interface CreateProgramOptions {
+export interface CreateProgramOptions extends RunCliDeps {
   /** `--version`에 쓸 버전. 기본은 `@plumb/core` package.json의 `version` */
   version?: string;
   /** 명령이 0이 아닌 코드로 끝날 때 부른다. 기본 `process.exit`. 테스트는 기록만 하는 함수로 바꾼다 */
@@ -75,7 +85,7 @@ export function readPackageVersion(): string {
 
 /** `plumb` 프로그램을 만든다. `parseAsync`는 호출자가 한다 */
 export function createProgram(options: CreateProgramOptions = {}): Command {
-  const ctx: CliContext = {
+  const ctx: CliContext & RunCliDeps = {
     stdout: options.stdout ?? process.stdout,
     stderr: options.stderr ?? process.stderr,
     exit: options.exit ?? ((code: number) => process.exit(code)),
@@ -85,6 +95,10 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.loadAdapter === undefined ? {} : { loadAdapter: options.loadAdapter }),
     ...(options.viewGenerators === undefined ? {} : { viewGenerators: options.viewGenerators }),
+    ...(options.runPipeline === undefined ? {} : { runPipeline: options.runPipeline }),
+    ...(options.spawnDetached === undefined ? {} : { spawnDetached: options.spawnDetached }),
+    ...(options.kill === undefined ? {} : { kill: options.kill }),
+    ...(options.self === undefined ? {} : { self: options.self }),
   };
 
   const program = new Command('plumb')
@@ -100,6 +114,11 @@ export function createProgram(options: CreateProgramOptions = {}): Command {
       case 'approve':
         registerApproveCommand(program, ctx);
         break;
+      case 'run':
+        registerRunCommands(program, ctx);
+        break;
+      case 'runs':
+        break; // `run`과 함께 등록된다
       case 'check':
         registerCheckCommand(program, ctx);
         break;
