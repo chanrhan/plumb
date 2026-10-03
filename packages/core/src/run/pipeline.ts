@@ -11,7 +11,7 @@
  * SDK 호출(`runRole`)과 검사(`runCheck`)는 주입 가능 — 단위 테스트는 가짜를 준다. 실제 실행은 `env/local`.
  */
 
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import type { Adapter, AdapterContext } from '../adapter/types.js';
 import { runCheck as defaultRunCheck, type RunCheckDeps, type RunCheckResult } from '../checks/run-check.js';
 import { scanDisputes, toDispute } from '../harness/dispute.js';
@@ -111,8 +111,8 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
   const rules = await checkPreconditions(deps);
   const runId = deps.runId ?? (await deps.store.runs.nextId());
   const origServiceRoot = resolve(deps.root, deps.config.service);
-  const workRoot = resolveWorkRoot(deps.config, deps.root);
-  const runWork = join(workRoot, runId);
+  // worktree 자체는 원본의 `.work/<runId>/repo`에
+  const runWork = join(resolveWorkRoot(deps.config, deps.root), runId);
 
   // worktree
   let worktree: Worktree | undefined;
@@ -127,6 +127,9 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
   }
   const ctx: AdapterContext = { root: serviceRoot, config: deps.config };
   const logPath = join(deps.store.paths.runsDir, runId, 'output.log');
+  // 역할 작업 디렉토리(스텁 · 이의 제기)는 **역할 cwd 안**에 둔다 — 경로 가드가 cwd 밖을 전부 막으므로(클라우드 1차 실행에서
+  // test-writer가 스텁을 읽지 못해 API를 추측했다). `.work/`는 서비스 .gitignore에 있다
+  const roleWork = resolveWorkRoot(deps.config, serviceRoot);
 
   const rec = new RunRecorder(
     newRunState({ id: runId, ruleIds: deps.ruleIds, config: deps.config, worktree: worktree?.repoRoot, now }),
@@ -170,9 +173,10 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
     // ② test-writer
     if (aborted()) return { state: await rec.abort(), worktree };
     await rec.startStage(2, 'test-writer');
-    const twWork = await ensureRoleWorkDir(runWork, 'test-writer');
-    const stubs = await generateDeclarationStubs({ serviceRoot, outDir: join(twWork.dir, 'stubs') });
-    log(`[stage 2] stubs ${stubs.files.length} (tsc exit ${stubs.exitCode})`);
+    const twWork = await ensureRoleWorkDir(roleWork, 'test-writer');
+    const stubsDir = join(twWork.dir, 'stubs');
+    const stubs = await generateDeclarationStubs({ serviceRoot, outDir: stubsDir });
+    log(`[stage 2] stubs ${stubs.files.length} (tsc exit ${stubs.exitCode}) → ${relative(serviceRoot, stubsDir)}`);
     const twStop = makeStopHook({
       kind: 'all-fail',
       stopBlockLimit: deps.config.stopBlockLimit,
@@ -223,7 +227,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
     // ③ implementer
     if (aborted()) return { state: await rec.abort(), worktree };
     await rec.startStage(3, 'implementer');
-    const imWork = await ensureRoleWorkDir(runWork, 'implementer');
+    const imWork = await ensureRoleWorkDir(roleWork, 'implementer');
     const imStop = makeStopHook({
       kind: 'all-pass-or-dispute',
       stopBlockLimit: deps.config.stopBlockLimit,
@@ -246,7 +250,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
         rules,
         failingTests: expected,
         cwd: serviceRoot,
-        disputesDir: imWork.disputesDir,
+        disputesDir: relative(serviceRoot, imWork.disputesDir),
         stopHook: imStop.hook,
         stderr,
         log,

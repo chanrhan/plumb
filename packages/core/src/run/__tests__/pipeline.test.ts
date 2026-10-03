@@ -275,7 +275,7 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
     ]);
     const runRole = async (input: RunRoleInput): Promise<RoleRunResult> => {
       if (input.options.model && input.prompt.includes('이의 제기')) {
-        const disputesDir = join(dir, '.work', 'r-0001', 'implementer', 'disputes');
+        const disputesDir = join(dir, '.work', 'implementer', 'disputes');
         await writeFile(
           join(disputesDir, 'd-boundary.md'),
           '7일 경계 해석이 테스트와 규칙에서 다르다\n\n규칙은 초과인데 테스트는 7일째도 거절을 기대한다. 입력: 정확히 7일.',
