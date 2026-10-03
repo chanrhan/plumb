@@ -29,7 +29,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "test": "vitest run",
-    "smoke": "tsx src/harness/smoke.ts"
+    "smoke": "tsx src/harness/smoke.ts",
+    "harness:probe": "tsx src/harness/probe.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
