@@ -104,7 +104,7 @@ describe('injectOnce (SDK 가짜 · 실제 git worktree 대신 임시 git 레포
       result: {
         subtype: 'success',
         structured_output: {
-          description: '7일 창을 700일로 늘려 검사를 무력화',
+          description: '7일 창 검사를 제거해 기간과 무관하게 환불되게 함',
           file: 'src/domains/payment/payment.ts',
           line: 1,
         },
@@ -129,7 +129,7 @@ describe('injectOnce (SDK 가짜 · 실제 git worktree 대신 임시 git 레포
       ruleId: RULE.id,
       result: 'check-failed',
       valid: true,
-      description: '7일 창을 700일로 늘려 검사를 무력화',
+      description: '7일 창 검사를 제거해 기간과 무관하게 환불되게 함',
       anchor: { file: 'src/domains/payment/payment.ts', line: 1, block: 'payment' },
       commit: 'abc1234def',
       at: '2026-10-03T00:00:00.000Z',
