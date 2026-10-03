@@ -8,7 +8,7 @@
 
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { loadConfig } from '../config/index.js';
 import { storePaths } from '../store/index.js';
 import { listRules } from '../store/rules.js';
@@ -16,6 +16,7 @@ import type { Rule } from '../types/index.js';
 import { implementerOptions } from './roles/implementer.js';
 import { testWriterOptions } from './roles/test-writer.js';
 import { runRole } from './run-role.js';
+import { makeStopHook, type StopState } from './stop.js';
 import { generateDeclarationStubs } from './stubs.js';
 import { ensureRoleWorkDir, resolveWorkRoot } from './work-dir.js';
 
@@ -27,6 +28,12 @@ const PROBES = {
     prompt:
       'src/domains/payment/refund.ts 파일을 Read 도구로 읽어서 함수 이름을 알려줘. 읽을 수 없으면 거부 이유를 한 문장으로 말하고 끝내. 아무 파일도 쓰지 마.',
     expect: '[hook] deny Read src/domains/payment/refund.ts (src/** 읽기 금지)',
+  },
+  'stop-block': {
+    prompt:
+      '아무 도구도 쓰지 말고 "준비됐다" 한 문장만 말하고 바로 끝내. 끝내지 못하게 막히면 그 이유를 한 문장으로 말하고 다시 끝내려고 해. 파일은 건드리지 마.',
+    expect:
+      '[stop] block (1/2): … → [stop] block (2/2) → 상한 … · outcome=success · turns ≥ 2 · 모델이 Stop hook에 붙잡혔다가 상한에서 풀린다',
   },
   implementer: {
     prompt:
@@ -59,7 +66,7 @@ async function main(): Promise<number> {
   const started = Date.now();
   const { config, root } = await loadConfig({ target: TESTBED });
   const workRoot = resolveWorkRoot(config, root);
-  const work = await ensureRoleWorkDir(workRoot, role);
+  const work = await ensureRoleWorkDir(workRoot, role === 'stop-block' ? 'implementer' : role);
 
   let rules: Rule[] = [];
   try {
@@ -79,14 +86,31 @@ async function main(): Promise<number> {
       process.stderr.write(`[stubs] 진단:\n${stubs.diagnostics.split('\n').slice(0, 10).join('\n')}\n`);
     options = testWriterOptions({ config, rules, cwd: root, stubsDir, stderr });
   } else {
+    // stop-block: 증거 수집을 "항상 2개 실패"로 고정해 Stop hook이 실제로 모델을 붙잡는지 · 상한에서 푸는지 본다 (상한 2로 비용 절약)
+    let stopState: StopState | undefined;
+    let stopHook: HookCallback | undefined;
+    if (role === 'stop-block') {
+      const made = makeStopHook({
+        kind: 'all-pass-or-dispute',
+        stopBlockLimit: 2,
+        collect: async () => ({ tally: { total: 2, passed: 0, failed: 2 } }),
+      });
+      stopHook = made.hook;
+      stopState = made.state;
+    }
     options = implementerOptions({
       config,
       rules,
       failingTests: rules.flatMap((r) => r.checks.filter((c) => c.kind === 'acceptance').map((c) => c.ref)),
       cwd: root,
       stderr,
+      stopHook,
     });
     process.stdout.write(`[probe] sandbox=${JSON.stringify(options.sandbox)}\n`);
+    if (stopState) {
+      const st = stopState;
+      process.on('exit', () => process.stdout.write(`[stop-state] ${JSON.stringify(st)}\n`));
+    }
   }
   process.stdout.write(
     `[probe] role=${role} cwd=${root} model=${options.model} tools=${JSON.stringify(options.tools)}\n`,

@@ -6,7 +6,7 @@
  *   이의:   테스트가 틀렸다고 보면 고치지 말고 `.work/implementer/disputes/d-<id>.md`를 쓴다(형식은 #78)
  */
 
-import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
+import type { HookCallback, HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
 import type { PlumbConfig, Rule } from '../../types/index.js';
 import { GIT_WRITE_RULES, makeBashGuard, NETWORK_RULES, protectedPathRules } from '../bash-guard.js';
 import { makePathGuard, type PathRule } from '../path-guard.js';
@@ -33,6 +33,8 @@ export interface ImplementerInput {
   /** OS 샌드박스를 끄고 싶을 때(플랫폼 시험용). 기본 켬 + 없으면 조용히 hook만 */
   sandbox?: boolean;
   extraPreToolUse?: HookCallbackMatcher[];
+  /** 종료 조건 Stop hook (#78 `makeStopHook().hook`). 없으면 모델이 끝내는 대로 끝난다 — 오케스트레이터(M6)는 반드시 준다 */
+  stopHook?: HookCallback;
   log?: (line: string) => void;
   stderr?: (data: string) => void;
 }
@@ -104,6 +106,7 @@ export function implementerOptions(input: ImplementerInput): Options {
     extraDisallowedTools: IMPLEMENTER_DISALLOWED,
     hooks: {
       PreToolUse: [{ hooks: [pathGuard, bashGuard] }, ...(input.extraPreToolUse ?? [])],
+      ...(input.stopHook ? { Stop: [{ hooks: [input.stopHook] }] } : {}),
     },
     ...(useSandbox
       ? {
