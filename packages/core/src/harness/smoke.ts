@@ -8,10 +8,14 @@
  *        도구 allowlist   → `allowedTools` · `disallowedTools`         (§8.6 도구 격리)
  *        경로 차단        → PreToolUse `permissionDecision: 'deny'`      (§8.6 경로 차단 hook)
  *        CLAUDE.md 미로드 → `settingSources: []`                        (§8.6 컨텍스트 격리)
+ *        MCP 커넥터 차단  → `strictMcpConfig: true` + `mcpServers: {}` + `disallowedTools: ['mcp__*']`
+ *                           (계정·settings의 MCP 서버는 `settingSources: []`로 안 막힌다 — 노트 2.4)
  *        하위 에이전트 금지 → `disallowedTools: ['Agent', 'Task']`       (§8.6 "생성 깊이 1")
  *        예산·반복 상한   → `maxBudgetUsd` · `maxTurns`                 (§15.4)
  *        OS 샌드박스      → `sandbox` 옵션 존재 (내용은 M4에서 실측)      (§8.6 파일시스템 격리)
  *   4. 결과 메시지의 비용·턴·시간 필드 (`total_cost_usd`는 클라이언트 추정 — 청구액 아님, §8.7)
+ *   5. 컨텍스트 누수 감시 — `[init] tools=N (mcp N)`과 첫 턴 `cache+`(캐시 생성 토큰). 도구 정의가 섞이면
+ *      첫 턴 캐시 생성이 수만 토큰으로 뛴다(로컬 1차: 121,925 vs 클라우드 1,221). 둘 다 넘으면 `[smoke] 경고`
  *
  * 실행: `pnpm --filter @plumb/core smoke`
  * 실패 시 흔한 원인 — docs/harness-notes.md "2. 스모크 결과" 참고
@@ -96,6 +100,16 @@ function usageLine(message: SDKMessage): string {
   return `in ${u.input_tokens ?? 0} · cache+ ${u.cache_creation_input_tokens ?? 0} · cache↺ ${u.cache_read_input_tokens ?? 0} · out ${u.output_tokens ?? 0}${thinking !== undefined ? ` (think ${thinking})` : ''}`;
 }
 
+/** 확인 5 — 첫 턴 캐시 생성 토큰. 시스템 프롬프트 + 도구 정의의 크기와 거의 같다 */
+function cacheCreated(message: SDKMessage): number {
+  if (message.type !== 'assistant') return 0;
+  const u = (message.message as unknown as { usage?: { cache_creation_input_tokens?: number } }).usage;
+  return u?.cache_creation_input_tokens ?? 0;
+}
+
+/** 첫 턴 캐시 생성이 이 이상이면 경고. 클라우드 정상 실행 1,221 · 로컬 MCP 누수 121,925 (노트 2.3 · 2.4) */
+const CACHE_WARN_TOKENS = 10_000;
+
 function summarize(result: SDKResultMessage): Record<string, unknown> {
   const base = {
     subtype: result.subtype,
@@ -111,6 +125,7 @@ function summarize(result: SDKResultMessage): Record<string, unknown> {
 
 async function main(): Promise<number> {
   let result: SDKResultMessage | undefined;
+  let firstTurnSeen = false;
   const started = Date.now();
 
   const finish = (thrown?: unknown): number => {
@@ -140,9 +155,13 @@ async function main(): Promise<number> {
         // 도구 격리: Read 하나만. 목록에 없는 도구는 에이전트에게 존재하지 않는다 (§8.6)
         tools: ['Read'],
         allowedTools: ['Read'],
-        disallowedTools: ['Agent', 'Task', 'Bash', 'Write', 'Edit', 'WebFetch', 'WebSearch'],
+        disallowedTools: ['Agent', 'Task', 'Bash', 'Write', 'Edit', 'WebFetch', 'WebSearch', 'mcp__*'],
         // 컨텍스트 격리: 프로젝트·사용자 settings와 CLAUDE.md를 읽지 않는다
         settingSources: [],
+        // MCP 격리: 여기서 준 서버(없음)만 쓴다. 계정(claude.ai 커넥터)·settings·.mcp.json의 MCP는 무시.
+        // `settingSources: []`만으로는 안 막혀 로컬에서 도구 92개 · 첫 턴 12만 토큰이 올라왔다(노트 2.4)
+        mcpServers: {},
+        strictMcpConfig: true,
         systemPrompt: { type: 'custom', prompt: '지시한 파일만 읽는다. 답은 한국어 한 문장.' },
         permissionMode: 'default',
         maxTurns: 3,
@@ -155,14 +174,29 @@ async function main(): Promise<number> {
       },
     })) {
       if (message.type === 'system' && message.subtype === 'init') {
+        const mcpTools = message.tools.filter((t) => t.startsWith('mcp__'));
         process.stdout.write(
-          `[init] model=${message.model} apiKeySource=${message.apiKeySource} claude_code=${message.claude_code_version} permissionMode=${message.permissionMode} tools=${JSON.stringify(message.tools)} budget=$${BUDGET_USD}\n`,
+          `[init] model=${message.model} apiKeySource=${message.apiKeySource} claude_code=${message.claude_code_version} permissionMode=${message.permissionMode} tools=${message.tools.length} (mcp ${mcpTools.length}) ${JSON.stringify(message.tools.slice(0, 5))}${message.tools.length > 5 ? '…' : ''} budget=$${BUDGET_USD}\n`,
         );
+        if (mcpTools.length > 0) {
+          process.stderr.write(
+            `[smoke] 경고: MCP 도구 ${mcpTools.length}개가 올라옴 — 격리 누수. strictMcpConfig/disallowedTools가 막지 못한 서버: ${JSON.stringify([...new Set(mcpTools.map((t) => t.split('__')[1]))])}\n`,
+          );
+        }
       } else if (message.type === 'assistant') {
         const text = textOf(message);
         if (text) process.stdout.write(`[assistant] ${text}\n`);
         const usage = usageLine(message);
         if (usage) process.stdout.write(`[usage] ${usage}\n`);
+        if (!firstTurnSeen) {
+          firstTurnSeen = true;
+          const created = cacheCreated(message);
+          if (created > CACHE_WARN_TOKENS) {
+            process.stderr.write(
+              `[smoke] 경고: 첫 턴 캐시 생성 ${created} 토큰 (기준 ${CACHE_WARN_TOKENS}) — 도구 정의·설정이 컨텍스트에 섞였을 가능성\n`,
+            );
+          }
+        }
       } else if (message.type === 'result') {
         result = message;
       }
