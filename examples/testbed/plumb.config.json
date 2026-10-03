@@ -36,16 +36,12 @@
   },
   "blocks": {
     "payment": {
-      "include": [
-        "src/domains/payment/**"
-      ],
+      "include": ["src/domains/payment/**"],
       "dependsOn": [],
       "risk": "high"
     },
     "auth": {
-      "include": [
-        "src/domains/auth/**"
-      ],
+      "include": ["src/domains/auth/**"],
       "dependsOn": []
     }
   }

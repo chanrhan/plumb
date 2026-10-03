@@ -250,7 +250,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
         rules,
         failingTests: expected,
         cwd: serviceRoot,
-        disputesDir: relative(serviceRoot, imWork.disputesDir),
+        disputesDir: imWork.disputesDir,
         stopHook: imStop.hook,
         stderr,
         log,
