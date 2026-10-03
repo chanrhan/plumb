@@ -108,6 +108,21 @@ export async function removeWorktree(serviceRoot: string, wt: Pick<Worktree, 're
 
 /** worktree 안의 변경 요약(`git status --short`). 비어 있으면 역할이 아무것도 바꾸지 않았다 */
 export async function worktreeChanges(wt: Pick<Worktree, 'repoRoot'>): Promise<string[]> {
-  const out = await git(wt.repoRoot, ['status', '--short']);
-  return out === '' ? [] : out.split('\n');
+  // porcelain: 두 글자 상태 + 공백 + 경로 (`git status --short`는 앞 공백을 잘라 버릴 수 있다)
+  // `git()`은 trim하므로 앞 공백(` M`)이 사라진다 — 여기서는 원문을 쓴다
+  const { stdout } = await execFileAsync('git', ['status', '--porcelain'], {
+    cwd: wt.repoRoot,
+    maxBuffer: 8 * 1024 * 1024,
+  });
+  return stdout
+    .split('\n')
+    .filter((l) => l.length > 0)
+    .map((l) => l.replace(/\r$/, ''));
+}
+
+/** `worktreeChanges` 한 줄에서 경로만 (` M src/a.ts` · `?? b.ts` · `R  a -> b`는 새 이름) */
+export function changedPath(line: string): string {
+  const p = line.slice(3);
+  const arrow = p.indexOf(' -> ');
+  return arrow >= 0 ? p.slice(arrow + 4) : p;
 }

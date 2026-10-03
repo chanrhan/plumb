@@ -3,6 +3,7 @@
  */
 export * from './dispute-flow.js';
 export * from './evidence.js';
+export * from './inject.js';
 export * from './pipeline.js';
 export * from './state.js';
 export * from './worktree.js';
