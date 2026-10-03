@@ -8,9 +8,9 @@ import {
   STUB_COMMANDS,
 } from '../program.js';
 
-const EXPECTED_COMMANDS = ['init', 'rule', 'approve', 'run', 'check', 'views', 'ui', 'open'];
+const EXPECTED_COMMANDS = ['init', 'rule', 'approve', 'run', 'runs', 'check', 'views', 'ui', 'open'];
 /** 구현된 명령 — M3(#32 rule · approve, #33 ui) · M5(#47 check) · M8(#60 views · open). 나머지는 자리 표시 */
-const IMPLEMENTED = ['rule', 'approve', 'check', 'ui', 'views', 'open'];
+const IMPLEMENTED = ['rule', 'approve', 'check', 'ui', 'views', 'open', 'run', 'runs'];
 const STUBS = EXPECTED_COMMANDS.filter((name) => !IMPLEMENTED.includes(name));
 
 /** 테스트용 프로그램. 종료 대신 기록하고, 출력은 버퍼에 모은다 */
@@ -114,14 +114,13 @@ describe('미구현 하위 명령', () => {
     const byName = Object.fromEntries(STUB_COMMANDS.map((stub) => [stub.name, stub.milestone]));
     expect(byName).toEqual({
       init: 'M10',
-      run: 'M6',
     });
   });
 
   it('--target은 하위 명령 앞에서 전역 옵션으로 읽힌다', async () => {
     const { program, exits } = testProgram();
 
-    await program.parseAsync(['--target', './service', 'run'], { from: 'user' });
+    await program.parseAsync(['--target', './service', 'init'], { from: 'user' });
 
     expect(program.opts().target).toBe('./service');
     expect(exits).toEqual([2]);

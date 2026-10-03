@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CACHE_LEAK_THRESHOLD, detectLeak, type InitSnapshot, mcpServerOf } from '../leak.js';
+import { allowedToolsOf } from '../run-role.js';
 
 const clean: InitSnapshot = {
   model: 'claude-sonnet-5-5',
@@ -77,5 +78,23 @@ describe('detectLeak (노트 결정 8)', () => {
   it('mcpServerOf', () => {
     expect(mcpServerOf('mcp__claude_ai_Notion__notion-search')).toBe('claude_ai_Notion');
     expect(mcpServerOf('Read')).toBeUndefined();
+  });
+});
+
+describe('allowedToolsOf — 구조화 출력의 StructuredOutput 도구 (#90 실측)', () => {
+  it('outputFormat이 있을 때만 StructuredOutput을 허용 목록에 넣는다', () => {
+    expect(allowedToolsOf({ tools: ['Read'] })).toEqual(['Read']);
+    expect(
+      allowedToolsOf({ tools: ['Read'], outputFormat: { type: 'json_schema', schema: { type: 'object' } } }),
+    ).toEqual(['Read', 'StructuredOutput']);
+    expect(allowedToolsOf({ tools: { type: 'preset', preset: 'claude_code' } })).toEqual([]);
+    const init = { ...clean, tools: ['Read', 'StructuredOutput'] };
+    expect(detectLeak({ init, allowedTools: allowedToolsOf({ tools: ['Read'] }) }).leaked).toBe(true);
+    expect(
+      detectLeak({
+        init,
+        allowedTools: allowedToolsOf({ tools: ['Read'], outputFormat: { type: 'json_schema', schema: {} } }),
+      }).leaked,
+    ).toBe(false);
   });
 });

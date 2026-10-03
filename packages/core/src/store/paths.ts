@@ -10,6 +10,7 @@ import { basename, join, resolve } from 'node:path';
 import type {
   CheckRunId,
   DecisionId,
+  InjectionId,
   PlumbConfig,
   ProposalId,
   ReviewQueueItemId,
@@ -34,6 +35,7 @@ export const STORE_LAYOUT = {
   views: 'views',
   contracts: 'contracts',
   reviewQueue: 'review-queue',
+  injections: 'injections',
   codeOpens: 'code-opens.jsonl',
   meta: 'meta.json',
 } as const;
@@ -72,6 +74,8 @@ export interface StorePaths {
   readonly viewsDir: string;
   readonly contractsDir: string;
   readonly reviewQueueDir: string;
+  /** 위반 주입 기록 `injections/<ruleId>/<i-id>.json` (기획안 §7.4, #90) */
+  readonly injectionsDir: string;
 
   /** `proposals/<ruleId>/` */
   proposalDir(ruleId: RuleId): string;
@@ -93,6 +97,10 @@ export interface StorePaths {
   contract(contractPath: string): string;
   /** `review-queue/<q-id>.json` */
   reviewQueueItem(id: ReviewQueueItemId): string;
+  /** `injections/<ruleId>/` */
+  injectionDir(ruleId: RuleId): string;
+  /** `injections/<ruleId>/<i-id>.json` */
+  injection(ruleId: RuleId, id: InjectionId): string;
 }
 
 export interface StorePathsOptions {
@@ -134,6 +142,7 @@ export function storePaths(
   const viewsDir = dir(STORE_LAYOUT.views);
   const contractsDir = dir(STORE_LAYOUT.contracts);
   const reviewQueueDir = dir(STORE_LAYOUT.reviewQueue);
+  const injectionsDir = dir(STORE_LAYOUT.injections);
 
   return {
     root,
@@ -151,6 +160,7 @@ export function storePaths(
     viewsDir,
     contractsDir,
     reviewQueueDir,
+    injectionsDir,
     proposalDir(ruleId) {
       assertSafeSegment('규칙 ID', ruleId);
       return join(proposalsDir, ruleId);
@@ -189,6 +199,15 @@ export function storePaths(
       assertSafeSegment('계약 파일', flat);
       return join(contractsDir, `${flat}.json`);
     },
+    injectionDir(ruleId) {
+      assertSafeSegment('규칙 ID', ruleId);
+      return join(injectionsDir, ruleId);
+    },
+    injection(ruleId, id) {
+      assertSafeSegment('규칙 ID', ruleId);
+      assertSafeSegment('주입 ID', id);
+      return join(injectionsDir, ruleId, `${id}.json`);
+    },
     reviewQueueItem(id) {
       assertSafeSegment('검토 대기열 ID', id);
       return join(reviewQueueDir, `${id}.json`);
@@ -209,5 +228,6 @@ export function storeDirectories(paths: StorePaths): string[] {
     paths.viewsDir,
     paths.contractsDir,
     paths.reviewQueueDir,
+    paths.injectionsDir,
   ];
 }

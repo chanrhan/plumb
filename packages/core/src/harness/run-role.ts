@@ -47,6 +47,15 @@ export interface RunRoleInput {
   cacheThreshold?: number;
 }
 
+/**
+ * 누수 판정의 허용 목록. `tools`는 배열 또는 preset 객체 — 역할 공통부는 배열만 만들지만 타입은 둘 다 허용한다.
+ * `outputFormat`(구조화 출력)을 주면 SDK가 내장 도구 `StructuredOutput`을 세션에 넣는다(격리 시험 #90 실측) — 그때만 허용한다.
+ */
+export function allowedToolsOf(options: Pick<Options, 'tools' | 'outputFormat'>): string[] {
+  const base = Array.isArray(options.tools) ? [...options.tools] : [];
+  return options.outputFormat ? [...base, 'StructuredOutput'] : base;
+}
+
 export function assistantText(message: SDKMessage): string {
   if (message.type !== 'assistant') return '';
   const blocks = (message.message as { content?: unknown }).content;
@@ -80,8 +89,7 @@ export function initSnapshot(message: SDKMessage): InitSnapshot | undefined {
 
 export async function runRole(input: RunRoleInput): Promise<RoleRunResult> {
   const started = Date.now();
-  // `tools`는 배열 또는 preset 객체 — 역할 공통부는 배열만 만들지만 타입은 둘 다 허용한다
-  const allowedTools = Array.isArray(input.options.tools) ? input.options.tools : [];
+  const allowedTools = allowedToolsOf(input.options);
   let init: InitSnapshot | undefined;
   let leak: LeakVerdict | undefined;
   let result: SDKResultMessage | undefined;

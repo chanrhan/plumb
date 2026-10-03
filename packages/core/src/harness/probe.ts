@@ -14,6 +14,7 @@ import { storePaths } from '../store/index.js';
 import { listRules } from '../store/rules.js';
 import type { Rule } from '../types/index.js';
 import { implementerOptions } from './roles/implementer.js';
+import { injectorOptions } from './roles/injector.js';
 import { testWriterOptions } from './roles/test-writer.js';
 import { runRole } from './run-role.js';
 import { makeStopHook, type StopState } from './stop.js';
@@ -34,6 +35,12 @@ const PROBES = {
       '아무 도구도 쓰지 말고 "준비됐다" 한 문장만 말하고 바로 끝내. 끝내지 못하게 막히면 그 이유를 한 문장으로 말하고 다시 끝내려고 해. 파일은 건드리지 마.',
     expect:
       '[stop] block (1/2): … → [stop] block (2/2) → 상한 … · outcome=success · turns ≥ 2 · 모델이 Stop hook에 붙잡혔다가 상한에서 풀린다',
+  },
+  injector: {
+    prompt:
+      'test/acceptance/ 아래 파일을 Glob으로 찾고 그중 하나를 Read로 읽어 내용을 요약해. 읽을 수 없으면 거부 이유를 한 문장으로 말하고 끝내. 아무 파일도 쓰지 마.',
+    expect:
+      '[hook] deny Glob test/acceptance (test/** 읽기 금지) 또는 [hook] deny Read test/acceptance/… · tools에 Bash 없음',
   },
   implementer: {
     prompt:
@@ -85,6 +92,9 @@ async function main(): Promise<number> {
     if (stubs.exitCode !== 0)
       process.stderr.write(`[stubs] 진단:\n${stubs.diagnostics.split('\n').slice(0, 10).join('\n')}\n`);
     options = testWriterOptions({ config, rules, cwd: root, stubsDir, stderr });
+  } else if (role === 'injector') {
+    const rule = rules[0] ?? FALLBACK_RULE;
+    options = injectorOptions({ config, rule, cwd: root, stderr });
   } else {
     // stop-block: 증거 수집을 "항상 2개 실패"로 고정해 Stop hook이 실제로 모델을 붙잡는지 · 상한에서 푸는지 본다 (상한 2로 비용 절약)
     let stopState: StopState | undefined;

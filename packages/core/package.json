@@ -16,6 +16,10 @@
     "./harness": {
       "types": "./dist/harness/index.d.ts",
       "default": "./dist/harness/index.js"
+    },
+    "./run": {
+      "types": "./dist/run/index.d.ts",
+      "default": "./dist/run/index.js"
     }
   },
   "bin": {
