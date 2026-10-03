@@ -5,15 +5,48 @@
   "adapter": "nextjs",
   "node": "22",
   "roles": {
-    "test-writer": { "model": "claude-sonnet-5-5", "maxTurns": 60, "maxBudgetUsd": 3 },
-    "implementer": { "model": "claude-sonnet-5-5", "maxTurns": 80, "maxBudgetUsd": 5 },
-    "injector": { "model": "claude-sonnet-5-5", "maxTurns": 30, "maxBudgetUsd": 2 },
-    "rule-drafter": { "model": "claude-sonnet-5-5", "maxTurns": 1, "maxBudgetUsd": 0.5 }
+    "test-writer": {
+      "model": "claude-sonnet-5-5",
+      "maxTurns": 60,
+      "maxBudgetUsd": 3
+    },
+    "implementer": {
+      "model": "claude-sonnet-5-5",
+      "maxTurns": 80,
+      "maxBudgetUsd": 5
+    },
+    "injector": {
+      "model": "claude-sonnet-5-5",
+      "maxTurns": 30,
+      "maxBudgetUsd": 2
+    },
+    "rule-drafter": {
+      "model": "claude-sonnet-5-5",
+      "maxTurns": 1,
+      "maxBudgetUsd": 0.5
+    }
   },
   "stopBlockLimit": 5,
-  "diffSearch": { "numRuns": 1000, "seed": 20261001 },
+  "run": {
+    "maxBudgetUsd": 3
+  },
+  "diffSearch": {
+    "numRuns": 1000,
+    "seed": 20261001
+  },
   "blocks": {
-    "payment": { "include": ["src/domains/payment/**"], "dependsOn": [], "risk": "high" },
-    "auth": { "include": ["src/domains/auth/**"], "dependsOn": [] }
+    "payment": {
+      "include": [
+        "src/domains/payment/**"
+      ],
+      "dependsOn": [],
+      "risk": "high"
+    },
+    "auth": {
+      "include": [
+        "src/domains/auth/**"
+      ],
+      "dependsOn": []
+    }
   }
 }
