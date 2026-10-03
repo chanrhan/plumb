@@ -42,6 +42,40 @@
 
 읽은 것: Read 1회 · 권한 프롬프트 없음(`allowedTools: ['Read']`, `permissionMode: 'default'`) · cwd 밖 접근 시도 없음(`deny` 줄 없음, `permission_denials: 0`) · 턴 2 · 추정 비용 $0.011 · 벽시계 5.1초(프로세스 기동 포함).
 
+### 2.2 로컬(macOS · 구독) 첫 실행 — 예산 초과
+
+```
+[assistant] <tool_use Read>
+[hook] PreToolUse Read /Users/chan/plumb/packages/core/package.json
+[smoke] 실패: Claude Code returned an error result: Reached maximum budget ($0.2)
+```
+
+- **확인됨**: 구독 인증으로 SDK가 돈다(모델이 응답하고 도구를 호출) · PreToolUse hook이 가로챈다 · `maxBudgetUsd`가 실행을 끊는다
+- **원인 가설**: 같은 호출이 클라우드(기본 모델 `claude-sonnet-5-5`)에서는 $0.007~0.011. 모델을 지정하지 않아 로컬 계정의 기본 모델(더 비싼 모델 또는 생각 토큰이 많은 설정)이 쓰였을 것 — 당시 스크립트는 모델을 출력하지 않아 확정 못 함
+- **SDK 동작**: 오류 결과(`error_max_budget_usd`)를 result 메시지로 보낸 뒤 **예외로도 던진다**. 하네스는 예외 경로에서도 받아 둔 result를 회수해야 한다
+- **조치(같은 PR)**: `[init] model= apiKeySource=` 출력, 메시지별 `[usage]`, 예외 시에도 `[result]` 요약, 모델·예산을 `PLUMB_SMOKE_MODEL` · `PLUMB_SMOKE_BUDGET`로 덮어쓰기(기본 예산 0.5)
+
+### 2.3 수정 후 클라우드 재실행
+
+```
+[init] model=claude-sonnet-5-5 apiKeySource=none claude_code=2.1.288 permissionMode=default tools=["Read"] budget=$0.5
+[usage] in 2 · cache+ 1221 · cache↺ 973 · out 16
+[hook] PreToolUse Read /home/user/plumb/packages/core/package.json
+[usage] in 2 · cache+ 146 · cache↺ 2194 · out 43
+[result] {"subtype":"success","num_turns":2,"total_cost_usd":0.0074, …}
+
+$ PLUMB_SMOKE_BUDGET=0.001 pnpm --filter @plumb/core smoke     # 예외 경로
+[result] {"subtype":"error_max_budget_usd","num_turns":1,"total_cost_usd":0.0059,"is_error":true}
+[smoke] 예산 상한($0.001)에 걸림 — maxBudgetUsd가 실행을 끊는 것은 확인됨
+exit 1
+```
+
+### 2.4 로컬 재실행 (채울 것)
+
+```
+(git pull 후 pnpm --filter @plumb/core smoke 출력 — 특히 [init] model= 줄)
+```
+
 ## 3. 격리 옵션 대응표 (기획안 §8.6 세 겹 × SDK 옵션)
 
 | 겹 | 기획안 수단 | SDK 옵션 | 확인 상태 |
@@ -50,7 +84,7 @@
 | 도구 | 도구 목록 지정 · 경로 차단 hook | `tools: ['Read']` + `allowedTools` + `disallowedTools` · `hooks.PreToolUse` → `permissionDecision: 'deny'` | 타입 확인 · 스모크 사용 → 실측 (채울 것) |
 | 하위 에이전트 금지 | 생성 깊이 1 | `disallowedTools: ['Agent', 'Task']` (+ `agents` 옵션을 주지 않는다) | 타입 확인. 실제 거부는 M4 격리 시험(#24 상당)에서 |
 | 파일시스템 | 역할별 worktree · OS 샌드박스(셸 명령만) | `cwd` · `sandbox?: SandboxSettings` 옵션 존재 | 타입에 있음. 내용(`allowUnsandboxedCommands`, 읽기·쓰기 경로 등)은 M4에서 실측 — **OS 샌드박스는 셸에만 적용되므로 파일 도구는 hook으로 따로 막는다(§8.6)** |
-| 예산·반복 | 역할별 상한, 넘으면 실패로 끝내 검토 대기열 | `maxBudgetUsd` · `maxTurns` → 결과 `subtype: 'error_max_budget_usd' | 'error_max_turns'` | 타입 확인 |
+| 예산·반복 | 역할별 상한, 넘으면 실패로 끝내 검토 대기열 | `maxBudgetUsd` · `maxTurns` → 결과 `subtype: 'error_max_budget_usd' \| 'error_max_turns'` | **실측**: 로컬·클라우드 모두 `error_max_budget_usd`로 끊긴다. SDK는 이를 예외로도 던진다 → 하네스는 예외에서도 result를 회수 |
 
 ## 4. 종료 조건의 수단 (M4 #23 상당)
 
@@ -71,3 +105,4 @@
 3. `permissionMode`: 역할 에이전트는 사람이 없으므로 `'default'` + `allowedTools`로 자동 허용되는지 → 클라우드 스모크에서는 프롬프트 없이 Read가 허용됐다. 목록 밖 도구를 모델이 요청할 때의 동작(거부 메시지로 돌아오는지, 멈추는지)은 M4 격리 시험에서 실측
 4. 인증: 본인 머신은 구독, 배포 시 API 키(§8.7). SDK 문서는 "제3자 제품에 claude.ai 로그인 제공은 승인 없이 불가"를 명시 — 기획안과 일치. `plumb.config.json`에 인증 방식을 적지 않고 환경(`claude login` / 환경변수)에 맡긴다
 5. zod 4 승격 여부(1절)
+6. **역할별 `model`을 `plumb.config.json roles.*.model`로 반드시 명시**한다. 계정 기본 모델에 맡기면 같은 작업의 비용이 기기마다 수십 배 달라진다(2.2) — 현재 testbed 설정의 `"model": "default"`는 M4에서 실제 모델 ID로 바꾼다

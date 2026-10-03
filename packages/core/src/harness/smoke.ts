@@ -36,6 +36,14 @@ const CWD = resolve(HERE, '..', '..');
 
 // const PATH_TO_CLAUDE = '/usr/local/bin/claude'; // 번들 바이너리가 없을 때만
 
+/**
+ * 모델 · 예산. 기본은 모델을 지정하지 않아 **계정 기본 모델**이 무엇인지 관찰한다(`[init] model=`).
+ * 로컬 구독 첫 실행에서 $0.2 상한이 첫 도구 호출 직후 소진됐다(노트 2.2) — 상한을 0.5로 올리고 덮어쓸 수 있게 했다.
+ *   PLUMB_SMOKE_MODEL=claude-sonnet-5-5 PLUMB_SMOKE_BUDGET=1 pnpm --filter @plumb/core smoke
+ */
+const MODEL = process.env.PLUMB_SMOKE_MODEL || undefined;
+const BUDGET_USD = Number(process.env.PLUMB_SMOKE_BUDGET ?? '0.5');
+
 function toolPath(input: unknown): string | undefined {
   const t = input as { file_path?: unknown } | null;
   return typeof t?.file_path === 'string' ? t.file_path : undefined;
@@ -80,6 +88,14 @@ function textOf(message: SDKMessage): string {
     .join(' ');
 }
 
+function usageLine(message: SDKMessage): string {
+  if (message.type !== 'assistant') return '';
+  const u = (message.message as unknown as { usage?: Record<string, unknown> }).usage;
+  if (!u) return '';
+  const thinking = (u.output_tokens_details as { thinking_tokens?: number } | undefined)?.thinking_tokens;
+  return `in ${u.input_tokens ?? 0} · cache+ ${u.cache_creation_input_tokens ?? 0} · cache↺ ${u.cache_read_input_tokens ?? 0} · out ${u.output_tokens ?? 0}${thinking !== undefined ? ` (think ${thinking})` : ''}`;
+}
+
 function summarize(result: SDKResultMessage): Record<string, unknown> {
   const base = {
     subtype: result.subtype,
@@ -97,53 +113,66 @@ async function main(): Promise<number> {
   let result: SDKResultMessage | undefined;
   const started = Date.now();
 
-  for await (const message of query({
-    prompt:
-      '현재 디렉토리의 package.json 파일을 읽고, 그 첫 줄의 내용을 한 문장으로 알려줘. 다른 파일은 열지 말고 다른 일은 하지 마.',
-    options: {
-      cwd: CWD,
-      // 도구 격리: Read 하나만. 목록에 없는 도구는 에이전트에게 존재하지 않는다 (§8.6)
-      tools: ['Read'],
-      allowedTools: ['Read'],
-      disallowedTools: ['Agent', 'Task', 'Bash', 'Write', 'Edit', 'WebFetch', 'WebSearch'],
-      // 컨텍스트 격리: 프로젝트·사용자 settings와 CLAUDE.md를 읽지 않는다
-      settingSources: [],
-      systemPrompt: { type: 'custom', prompt: '지시한 파일만 읽는다. 답은 한국어 한 문장.' },
-      permissionMode: 'default',
-      maxTurns: 3,
-      maxBudgetUsd: 0.2,
-      // pathToClaudeCodeExecutable: PATH_TO_CLAUDE,
-      hooks: {
-        PreToolUse: [{ matcher: 'Read', hooks: [logRead, denyOutsideCwd] }],
-      },
-      stderr: (data) => process.stderr.write(`[sdk] ${data}`),
-    },
-  })) {
-    if (message.type === 'assistant') {
-      const text = textOf(message);
-      if (text) process.stdout.write(`[assistant] ${text}\n`);
-    } else if (message.type === 'result') {
-      result = message;
+  const finish = (thrown?: unknown): number => {
+    if (result !== undefined) {
+      process.stdout.write(`[result] ${JSON.stringify(summarize(result))}\n`);
+      if (result.subtype === 'success') process.stdout.write(`[answer] ${result.result}\n`);
+      if (result.subtype === 'error_max_budget_usd') {
+        process.stdout.write(`[smoke] 예산 상한($${BUDGET_USD})에 걸림 — maxBudgetUsd가 실행을 끊는 것은 확인됨\n`);
+      }
     }
-  }
+    if (thrown !== undefined) {
+      const e = thrown as { message?: string };
+      process.stderr.write(`[smoke] 실패: ${e.message ?? String(thrown)}\n`);
+    }
+    process.stdout.write(`[smoke] wall ${Date.now() - started}ms\n`);
+    if (thrown !== undefined || result === undefined) return 1;
+    return result.subtype === 'success' && !result.is_error ? 0 : 1;
+  };
 
-  if (result === undefined) {
-    process.stderr.write('[smoke] result 메시지가 오지 않았다\n');
-    return 1;
+  try {
+    for await (const message of query({
+      prompt:
+        '현재 디렉토리의 package.json 파일을 읽고, 그 첫 줄의 내용을 한 문장으로 알려줘. 다른 파일은 열지 말고 다른 일은 하지 마.',
+      options: {
+        cwd: CWD,
+        ...(MODEL ? { model: MODEL } : {}),
+        // 도구 격리: Read 하나만. 목록에 없는 도구는 에이전트에게 존재하지 않는다 (§8.6)
+        tools: ['Read'],
+        allowedTools: ['Read'],
+        disallowedTools: ['Agent', 'Task', 'Bash', 'Write', 'Edit', 'WebFetch', 'WebSearch'],
+        // 컨텍스트 격리: 프로젝트·사용자 settings와 CLAUDE.md를 읽지 않는다
+        settingSources: [],
+        systemPrompt: { type: 'custom', prompt: '지시한 파일만 읽는다. 답은 한국어 한 문장.' },
+        permissionMode: 'default',
+        maxTurns: 3,
+        maxBudgetUsd: BUDGET_USD,
+        // pathToClaudeCodeExecutable: PATH_TO_CLAUDE,
+        hooks: {
+          PreToolUse: [{ matcher: 'Read', hooks: [logRead, denyOutsideCwd] }],
+        },
+        stderr: (data) => process.stderr.write(`[sdk] ${data}`),
+      },
+    })) {
+      if (message.type === 'system' && message.subtype === 'init') {
+        process.stdout.write(
+          `[init] model=${message.model} apiKeySource=${message.apiKeySource} claude_code=${message.claude_code_version} permissionMode=${message.permissionMode} tools=${JSON.stringify(message.tools)} budget=$${BUDGET_USD}\n`,
+        );
+      } else if (message.type === 'assistant') {
+        const text = textOf(message);
+        if (text) process.stdout.write(`[assistant] ${text}\n`);
+        const usage = usageLine(message);
+        if (usage) process.stdout.write(`[usage] ${usage}\n`);
+      } else if (message.type === 'result') {
+        result = message;
+      }
+    }
+  } catch (error) {
+    // SDK는 오류 결과(예산·턴 초과 등)를 예외로도 던진다 — 받아 둔 result로 요약을 남긴다 (M4 하네스 입력)
+    return finish(error);
   }
-  process.stdout.write(`[result] ${JSON.stringify(summarize(result))}\n`);
-  if (result.subtype === 'success') {
-    process.stdout.write(`[answer] ${result.result}\n`);
-  }
-  process.stdout.write(`[smoke] wall ${Date.now() - started}ms\n`);
-  return result.subtype === 'success' && !result.is_error ? 0 : 1;
+  if (result === undefined) process.stderr.write('[smoke] result 메시지가 오지 않았다\n');
+  return finish();
 }
 
-main().then(
-  (code) => process.exit(code),
-  (error: unknown) => {
-    const e = error as { message?: string; stack?: string };
-    process.stderr.write(`[smoke] 실패: ${e.message ?? String(error)}\n`);
-    process.exit(1);
-  },
-);
+main().then((code) => process.exit(code));
