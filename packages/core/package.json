@@ -30,7 +30,8 @@
     "lint": "biome check .",
     "test": "vitest run",
     "smoke": "tsx src/harness/smoke.ts",
-    "harness:probe": "tsx src/harness/probe.ts"
+    "harness:probe": "tsx src/harness/probe.ts",
+    "isolation-test": "tsx src/harness/isolation-test.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
