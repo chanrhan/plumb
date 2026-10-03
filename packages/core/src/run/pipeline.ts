@@ -11,6 +11,7 @@
  * SDK 호출(`runRole`)과 검사(`runCheck`)는 주입 가능 — 단위 테스트는 가짜를 준다. 실제 실행은 `env/local`.
  */
 
+import { readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import type { Adapter, AdapterContext } from '../adapter/types.js';
 import { runCheck as defaultRunCheck, type RunCheckDeps, type RunCheckResult } from '../checks/run-check.js';
@@ -23,6 +24,7 @@ import { generateDeclarationStubs } from '../harness/stubs.js';
 import { ensureRoleWorkDir, resolveWorkRoot } from '../harness/work-dir.js';
 import type { Store } from '../store/index.js';
 import type { PlumbConfig, Role, Rule, RuleId, RuleStatus, RunId, RunState } from '../types/index.js';
+import { handleDisputes } from './dispute-flow.js';
 import { collectEvidence } from './evidence.js';
 import { newRunState, RunRecorder } from './state.js';
 import { createWorktree, type Worktree } from './worktree.js';
@@ -282,6 +284,28 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
     );
     if (imStop.state.disputeRequired && !firstDispute)
       return { state: await rec.fail('stopBlockLimit', 'implementer'), worktree };
+
+    if (disputes.valid.length > 0) {
+      // 이의 제기 → test-writer 재검토(advisory) → 검토 대기열 (#88). 실패해도 대기열에는 올라간다
+      const reviewed = await handleDisputes({
+        config: deps.config,
+        store: deps.store,
+        rules,
+        disputes: rec.current.disputes,
+        readFile: (p) => readFile(p, 'utf8'),
+        cwd: serviceRoot,
+        runId,
+        runRole,
+        now,
+        log,
+        stderr,
+      });
+      for (const r of reviewed) {
+        await rec.replaceDispute(r.dispute);
+        await rec.recordRole('test-writer', { turns: r.usage.turns, costUsd: r.usage.costUsd });
+      }
+      if (rec.overBudget()) return { state: await rec.budgetExceeded(), worktree };
+    }
 
     // ④ plumb check (worktree에 대고; 기록은 원본 저장소에)
     if (aborted()) return { state: await rec.abort(), worktree };

@@ -295,12 +295,16 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
       heartbeatMs: 0,
     });
     expect(state.disputes).toHaveLength(1);
+    // 재검토(#88): 가짜 runRole은 구조화 출력이 없으므로 ambiguous → 그래도 대기열에 올라가고 queued
     expect(state.disputes[0]).toMatchObject({
       id: 'd-boundary',
       by: 'implementer',
       reviewer: 'test-writer',
-      status: 'reviewing',
+      status: 'queued',
+      queueItemId: 'q-0001',
+      advisory: { by: 'test-writer', verdict: 'ambiguous' },
     });
+    expect((await store.reviewQueue.list())[0]).toMatchObject({ kind: 'dispute', runId: state.id });
     expect(state.stages[2]?.result).toMatchObject({ stage: 3, allPassed: false, disputeId: 'd-boundary' });
     expect(state.status).toBe('completed');
   });
