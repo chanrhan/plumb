@@ -17,9 +17,10 @@
 | M1 | 완료 | #10 SDK 스모크 로컬 통과(`tools=1 (mcp 0)` · exit 0). 발견: 계정 MCP 커넥터 92개가 `settingSources: []`로 안 막힘 → `strictMcpConfig`로 차단. `docs/harness-notes.md`가 M4 입력 |
 | M2 | 완료 | testbed: payment 도메인(naive refund), OpenAPI + Route Handler(422는 계약에만), Vitest(JUnit) + depcruise 블록 규칙 5개 |
 | M3 | #36만 남음 | 저장소 코어 · CLI(`rule`·`approve`) · UI 토큰 통로 · UI `/rules` · 결정 기록 완료. 쿠키 없는 승인 401 확인. #36 rule-drafter는 `env/local`(#10 뒤) |
-| M4 | 이슈 등록 #75~#79 | 전부 `env/local`, 순차. 코드는 세션이 쓰고 SDK 실행은 사용자 머신에서(#10 방식). 노트 결정 7(모든 역할 `strictMcpConfig`) · 8(격리 상시 검사) 반영 |
+| M4 | 완료 | `pnpm isolation-test` 로컬(macOS · 구독) **11/11 ✅** · $0.075. 발견: macOS는 SDK 샌드박스 켜짐(캐시 +7k) · Linux는 bwrap 없으면 꺼짐 → hook이 정본(노트 결정 9). 누수 기준 20k |
 | M5 | 완료 | `plumb check`: Vitest JUnit + depcruise → 규칙별 상태 + 검사 범위 밖 → `checks/`·`rule-status/`. CLI 표와 UI `/rules` 상태 열 연결 |
-| M6 · M7 | 대기 | `env/local`(에이전트 실행). #10 뒤 |
+| M6 | 이슈 등록 #86~#89 | 순서 #86(파이프라인) → #87(`plumb run --detach`) · #88(이의 제기 재검토) → #89(UI, `parallel/blocked` → #87 뒤 위임 가능). 입력: 노트 6절 결정 1~10 |
+| M7 | 이슈 등록 #90 · #91 | #90 injector(`env/local`) → #91 차이 탐색 러너(`parallel/ok`, 에이전트 아님) |
 | M8 | #63 · #67만 남음 | View 6개 생성기 + `plumb views` + UI `/views`(Markdown·Mermaid, `plumb://open` 점프) 완료. testbed에서 `plumb check --views` → 12 파일. 흐름도는 spike 결과 A안(트레이스 + 정적) — 결정 #67 사람 확인 대기. #63 타입 보완 진행 중 |
 
 ## 마일스톤
@@ -104,21 +105,25 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 
 **종료 증거**: 규칙 1개로 파이프라인 ②③④가 사람 개입 없이 끝까지 돈다 · 앱을 닫아도 프로세스가 산다
 
-| 내용 |
-|---|
-| `plumb run` 순차 파이프라인 + 백그라운드 detach + `runs/<id>.json` |
-| 이의 제기 → 검토 대기열 파일 |
-| UI 실행 버튼 · 진행 상황 (`runs/*.json`만 읽음) |
+| wave | 이슈 | 내용 |
+|---|---|---|
+| 0 | #86 | 오케스트레이터 코어: ②(test-writer) → 테스트 → ③(implementer) → 테스트 → ④(`plumb check`), Stop hook 증거 = 어댑터 `runTests` JUnit, `runs/<id>.json` 전이·heartbeat, 실패·예산 초과 → 검토 대기열 |
+| 1 | #87 | `plumb run --rules … --detach`(detached 자식 + unref) · `plumb runs list/show/abort`(pid SIGTERM) |
+| 1 | #88 | 이의 제기 파일 → test-writer 재검토(advisory, 읽기 전용) → `disputes[].advisory` + 검토 대기열 `kind: dispute` |
+| 2 | #89 | UI `/runs`: 목록 · 상세(단계 ①~④ · 역할 사용량 · 이의 제기 · 출력 꼬리) · `POST /api/runs` spawn · abort. `area/ui`, #87 뒤 위임 가능 |
+
+#86 · #87 · #88는 `env/local`(SDK 실행이 증거). #89는 `runs/*.json` 픽스처로 CI 가능 → 위임 후보.
 
 ### M7 위반 주입 + 차이 탐색 `[L]`
 
 **종료 증거**: `pay.refund-window` 주입이 검사 실패로 잡히고 유효성 기록이 남는다
 
-| 내용 |
-|---|
-| injector 역할 + 임시 worktree 패치 |
-| 차이 탐색 러너 (원본·위반에 fast-check 입력 N개, 출력 비교. 에이전트 아님) |
-| 유효성 기록 → 🟢/🟡 확정 |
+| wave | 이슈 | 내용 |
+|---|---|---|
+| 0 | #90 | injector 역할(`test/**` 읽기 금지 · `rule.scope` 안 `src/**`만 쓰기) + 임시 worktree 패치 1건 → 인수 테스트 실패 = 유효 ✔ → `injections/<ruleId>/<id>.json` · 격리 시험 항목 추가 |
+| 1 | #91 | 차이 탐색 러너(에이전트 아님): fast-check 입력 N개 → 원본·위반 출력 비교 → `DiffSearch` 판정, 미판정은 검토 대기열 |
+
+단계 ⑤를 파이프라인에 잇는 것(잡히지 않은 주입 → ②로)은 M9 첫 슬라이스 점검에서.
 
 ### M8 View 6개 + View 화면
 
@@ -151,4 +156,4 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 
 ## 이슈 등록 시점
 
-M0 · M1 · M2 · M3 · M4 · M5 · M8 이슈는 등록했다. M6 · M7은 M4 격리 시험(#79)이 통과하면 등록한다. M2 이후는 **각 마일스톤을 시작할 때** 등록한다. 그 시점의 타입과 구조를 반영해야 범위와 범위 밖이 정확해지기 때문이다.
+M0~M8 이슈는 모두 등록했다(M6 · M7은 M4 격리 시험 #79 통과 뒤 등록). M9 · M10은 M7이 끝나면. M2 이후는 **각 마일스톤을 시작할 때** 등록한다. 그 시점의 타입과 구조를 반영해야 범위와 범위 밖이 정확해지기 때문이다.
