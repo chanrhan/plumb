@@ -105,6 +105,9 @@ describe('보호 저장소 — init → propose → approve → tamper', () => {
     expect(Object.keys(t.store.ruleStatus).sort()).toEqual(['get', 'list', 'write']);
     expect(Object.keys(t.store.views).sort()).toEqual(['list', 'read', 'write']);
     expect(Object.keys(t.store.codeOpens).sort()).toEqual(['append', 'count', 'list', 'summary']);
+    // 실행 상태 · 검토 대기열(#86) — 쓰기는 오케스트레이터 몫이고 rules.yaml과 무관하다
+    expect(Object.keys(t.store.runs).sort()).toEqual(['active', 'get', 'list', 'nextId', 'write']);
+    expect(Object.keys(t.store.reviewQueue).sort()).toEqual(['enqueue', 'list', 'nextId']);
     expect(Object.keys(t.store).sort()).toEqual([
       'approvals',
       'checks',
@@ -113,8 +116,10 @@ describe('보호 저장소 — init → propose → approve → tamper', () => {
       'init',
       'paths',
       'proposals',
+      'reviewQueue',
       'ruleStatus',
       'rules',
+      'runs',
       'status',
       'views',
     ]);
