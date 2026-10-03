@@ -4,6 +4,7 @@
  */
 
 export * from './common.js';
+export * from './diff-search.js';
 export * from './junit.js';
 export * from './junit-to-results.js';
 export * from './out-of-scope.js';
