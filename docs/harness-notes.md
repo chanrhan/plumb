@@ -8,7 +8,7 @@
 
 | 항목 | 값 |
 |---|---|
-| OS · Node | 로컬: macOS(Apple Silicon MacBook Air, `/Users/chan/plumb`) · Node 22. 클라우드: Linux |
+| OS · Node | 로컬: macOS(Apple Silicon MacBook Air, `/Users/chan/plumb`) · Node 22 — SDK 샌드박스 **켜짐**(7.2). 클라우드: Linux — `bwrap`·`socat` 없어 샌드박스 **꺼짐**(7.1) |
 | `@anthropic-ai/claude-agent-sdk` | 0.3.288 (`pnpm ls --filter @plumb/core @anthropic-ai/claude-agent-sdk`) |
 | 번들 Claude Code 바이너리 | optional dependency `@anthropic-ai/claude-agent-sdk-<platform>` 0.3.288 — 별도 CLI 설치 불필요. 로컬·클라우드 모두 `[init] claude_code=2.1.288`로 번들이 쓰였다 |
 | 인증 방식 | 로컬: 구독(`claude login` OAuth) — `[init] apiKeySource=none`(API 키 아님) 상태로 모델이 응답했다(2.4). 클라우드: 세션 프록시 인증, 역시 `apiKeySource=none` |
@@ -171,8 +171,8 @@ exit 0
 5. zod 4 승격 여부(1절)
 6. **역할별 `model`을 `plumb.config.json roles.*.model`로 반드시 명시**한다. 계정 기본 모델에 맡기면 같은 작업의 비용이 기기마다 달라진다 — 실측: 로컬 기본 `claude-fable-5-1` $0.044 vs `claude-sonnet-5-5` $0.011, 같은 토큰에 **4배**(2.6). 현재 testbed 설정의 `"model": "default"`는 M4에서 실제 모델 ID로 바꾼다
 7. **모든 역할의 `query()`에 `strictMcpConfig: true` + `mcpServers: {}` + `disallowedTools: ['mcp__*']`를 고정**한다. MCP는 Plumb가 명시적으로 주는 것(있다면)만. 역할 공통부(M4 첫 이슈)에 넣고 역할별로 풀 수 없게 한다
-8. 하네스는 매 실행 `[init].tools`(개수 · MCP 개수)와 첫 턴 `cache_creation_input_tokens`를 로그에 남기고, MCP > 0 또는 캐시 생성 > 기준이면 **실행을 실패로 끝낸다**(경고가 아니라). §8.6 "격리가 실제로 동작하는지 첫 슬라이스에서 직접 시험"을 1회 시험이 아니라 상시 검사로 — 격리 누수는 비용으로 즉시 드러나므로 싸게 잡을 수 있다
-9. **파일·셸 격리의 정본은 PreToolUse hook**(`path-guard.ts` · `bash-guard.ts`)이고 OS `sandbox`는 보조다. Linux에서 `bwrap`·`socat` 없이는 조용히 꺼지므로(7절) 샌드박스에 기대는 설계를 하지 않는다. 역할 옵션은 `failIfUnavailable: false`로 두고, 프로브·격리 시험이 `⚠ Sandbox disabled` 줄을 출력에 남긴다
+8. 하네스는 매 실행 `[init].tools`(개수 · MCP 개수)와 첫 턴 `cache_creation_input_tokens`를 로그에 남기고, MCP > 0 또는 캐시 생성 > 기준(20,000 — 7.2)이면 **실행을 실패로 끝낸다**(경고가 아니라). §8.6 "격리가 실제로 동작하는지 첫 슬라이스에서 직접 시험"을 1회 시험이 아니라 상시 검사로 — 격리 누수는 비용으로 즉시 드러나므로 싸게 잡을 수 있다
+9. **파일·셸 격리의 정본은 PreToolUse hook**(`path-guard.ts` · `bash-guard.ts`)이고 OS `sandbox`는 보조다. Linux에서 `bwrap`·`socat` 없이는 조용히 꺼지고(7.1), macOS에서는 켜지지만(7.2) 그래도 셸에만 적용되므로 샌드박스에 기대는 설계를 하지 않는다. 역할 옵션은 `failIfUnavailable: false`로 두고, 프로브·격리 시험이 `⚠ Sandbox disabled` 줄을 출력에 남긴다
 10. 격리 시험(`pnpm isolation-test`)은 M4 종료 증거이자 **회귀 시험**이다 — 역할 옵션 · 가드 · Stop hook을 바꾸는 PR은 이 명령의 표를 검증 증거에 붙인다(비용 ≈ $0.03/회)
 
 ## 7. 격리 시험 결과 (#79, `pnpm isolation-test`)
@@ -205,10 +205,34 @@ exit 0
 
 클라우드에는 계정 MCP가 없으므로 항목 6은 로컬(7.2)에서만 실제 시험이 된다. 샌드박스가 꺼진 채로 11/11이 통과한 것이 결정 9의 근거다.
 
-### 7.2 로컬(macOS · 구독) (채울 것)
+### 7.2 로컬(macOS · 구독) — 11/11 ✅ (M4 종료 증거)
 
 ```
-(pnpm isolation-test 출력 — 표 전체와 마지막 줄. `⚠ Sandbox` 줄이 있는지도 함께)
+[stubs] 18 .d.ts (tsc exit 2)
+[run] test-writer …
+[run] implementer …
+[run] stop-block …
+                                            ← `⚠ Sandbox disabled` 줄 없음: macOS는 SDK 샌드박스(seatbelt)가 켜진다
+| # | 항목 | 결과 | 근거 |
+|---|---|---|---|
+| 1 | test-writer src/** Read → deny | ✅ | [hook] deny Read src/domains/payment/refund.ts (src/** 읽기 금지) |
+| 2 | test-writer Bash 없음 | ✅ | ["Edit","Glob","Grep","Read","Write"] |
+| 3 | implementer test/acceptance/** Write → deny | ✅ | [hook] deny Write test/acceptance/probe.spec.ts (… 쓰기 금지) |
+| 4 | implementer .git/** Write → deny | ✅ | [hook] deny Write .git/probe.txt (… 쓰기 금지) |
+| 5 | implementer 네트워크(curl) → deny | ✅ | [hook] deny Bash "curl -sI https://example.com · head -1" (네트워크 도구) |
+| 6 | test-writer MCP 0 · 첫 턴 캐시 < 10000 | ✅ | tools=5 (mcp 0) · cache+ 1394 |
+| 6 | implementer MCP 0 · 첫 턴 캐시 < 10000 | ✅ | tools=6 (mcp 0) · cache+ 8463 |
+| 7 | test-writer Agent/Task 없음 | ✅ | ["Edit","Glob","Grep","Read","Write"] |
+| 7 | implementer Agent/Task 없음 | ✅ | ["Bash","Edit","Glob","Grep","Read","Write"] |
+| 8 | 틀린 구현 → Stop block ≥ 1, 상한에서 disputeRequired | ✅ | [stop] block (1/2) · [stop] block (2/2) → 상한 · state={"blocks":2,"disputeRequired":true} |
+| 9 | testbed에 쓰기가 남지 않음 (git status 비어 있음) | ✅ | (깨끗) |
+
+[isolation-test] 11/11 ✅ · outcomes success / success / success · 총비용 $0.0752 · wall 27386ms
+exit 0
 ```
 
-- 11/11 ✅ · exit 0 → **M4 종료 증거**. M4를 닫고 M6 · M7 이슈를 등록한다.
+해석:
+- **항목 6이 로컬에서 진짜 시험이 됐다**: 계정 커넥터 92개가 있는 머신에서 두 역할 모두 `mcp 0`. #10의 누수 수정(`strictMcpConfig`)이 역할 공통부에서도 유지된다.
+- **macOS는 샌드박스가 켜진다**(`⚠` 줄 없음). 그 영향으로 implementer 첫 턴 캐시 생성이 1,320(클라우드, 꺼짐) → **8,463** — 샌드박스 안내가 시스템 프롬프트에 붙는 것으로 보인다. 누수 기준 10,000에 1.5k 차이라 거짓 양성 위험 → `CACHE_LEAK_THRESHOLD`를 **20,000**으로(정상 최대의 2.4배, 누수 121,925의 1/6). 비용도 $0.029 → $0.075로 올랐다 — 역할당 ~7k 토큰의 고정비. M6에서 샌드박스를 켤지(macOS에서만 효과) 비용과 함께 판단한다.
+- `[stubs] tsc exit 2`: testbed 타입 오류(로컬에서 `prisma generate` 전이면 `PrismaClient` 타입 없음)지만 `.d.ts` 18개는 그대로 나왔다 — 선언 생성은 타입 오류에 관대하다. test-writer에는 영향 없음. 스텁 생성 전 `prisma generate`를 돌릴지는 M6 오케스트레이터에서.
+- 결론: **M4 종료 증거 충족**. M4를 닫고 M6 · M7 이슈를 등록한다.

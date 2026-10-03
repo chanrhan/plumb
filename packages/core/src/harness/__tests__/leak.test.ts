@@ -32,7 +32,7 @@ describe('detectLeak (노트 결정 8)', () => {
     expect(v.mcpTools).toHaveLength(3);
     expect(v.mcpServers).toEqual(['claude_ai_Notion', 'claude_ai_Figma']);
     expect(v.reasons[0]).toMatch(/MCP 도구 3개/);
-    expect(v.reasons[1]).toMatch(/121925 토큰 > 10000/);
+    expect(v.reasons[1]).toMatch(/121925 토큰 > 20000/);
   });
 
   it('init만으로도 판정한다 — 첫 턴 전에 끊기 위해', () => {
@@ -56,8 +56,11 @@ describe('detectLeak (노트 결정 8)', () => {
     expect(v.reasons[0]).toMatch(/MCP 서버 연결됨: notion/);
   });
 
-  it('캐시 기준은 바꿀 수 있고, 기본은 10,000', () => {
-    expect(CACHE_LEAK_THRESHOLD).toBe(10_000);
+  it('캐시 기준은 바꿀 수 있고, 기본은 20,000 (macOS 샌드박스 켜짐 8,463까지 정상)', () => {
+    expect(CACHE_LEAK_THRESHOLD).toBe(20_000);
+    expect(
+      detectLeak({ init: clean, firstUsage: { cache_creation_input_tokens: 8463 }, allowedTools: ['Read'] }).leaked,
+    ).toBe(false);
     const v = detectLeak({
       init: clean,
       firstUsage: { cache_creation_input_tokens: 5000 },
