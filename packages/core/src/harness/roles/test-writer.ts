@@ -6,7 +6,7 @@
  *   없다:   Bash(셸 불필요 — 테스트 실행은 오케스트레이터가 한다) · 하위 에이전트 · 인터넷(공통부)
  */
 
-import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
+import type { HookCallback, HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
 import type { PlumbConfig, Rule } from '../../types/index.js';
 import { makePathGuard, type PathRule } from '../path-guard.js';
 import { buildRoleOptions } from '../role-options.js';
@@ -30,6 +30,8 @@ export interface TestWriterInput {
   stubsDir: string;
   /** 추가 hook (스모크·프로브의 로그 등). PreToolUse에는 가드가 먼저 붙는다 */
   extraPreToolUse?: HookCallbackMatcher[];
+  /** 종료 조건 Stop hook (#78 `makeStopHook().hook`). 없으면 모델이 끝내는 대로 끝난다 — 오케스트레이터(M6)는 반드시 준다 */
+  stopHook?: HookCallback;
   log?: (line: string) => void;
   stderr?: (data: string) => void;
 }
@@ -83,6 +85,7 @@ export function testWriterOptions(input: TestWriterInput): Options {
     extraDisallowedTools: TEST_WRITER_DISALLOWED,
     hooks: {
       PreToolUse: [{ hooks: [guard] }, ...(input.extraPreToolUse ?? [])],
+      ...(input.stopHook ? { Stop: [{ hooks: [input.stopHook] }] } : {}),
     },
     stderr: input.stderr,
   });
