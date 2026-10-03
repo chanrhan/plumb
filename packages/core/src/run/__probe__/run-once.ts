@@ -1,6 +1,8 @@
 /**
  * 로컬 완료 증거 진입점 (이슈 #86). testbed에서 규칙 1개로 파이프라인을 1회 돌린다. CLI(`plumb run`)는 #87.
- *   pnpm --filter @plumb/core exec tsx src/run/__probe__/run-once.ts pay.refund-window [--in-place]
+ *   pnpm --filter @plumb/core build && node packages/core/dist/run/__probe__/run-once.js pay.refund-window [--in-place]
+ * **dist에서 돌린다** — 어댑터 패키지는 `@plumb/core`(dist)의 레지스트리에 등록되므로 `tsx src/…`로 돌리면
+ * src 레지스트리와 갈려 "어댑터가 등록되어 있지 않다"가 난다(`plumb check`도 같은 이유로 dist에서 돈다).
  * 저장소에 승인된 규칙이 없으면 먼저 `plumb rule propose` → `plumb approve`로 승인해야 한다(①이 막는다).
  */
 
