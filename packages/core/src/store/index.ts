@@ -13,9 +13,14 @@ import type {
   PlumbConfig,
   Proposal,
   ProposalId,
+  ReviewQueueItem,
+  ReviewQueueItemId,
   Rule,
   RuleId,
   RuleStatusRecord,
+  RunId,
+  RunState,
+  RunSummary,
   View,
   ViewName,
 } from '../types/index.js';
@@ -41,8 +46,10 @@ import { type ApproveContractInput, approveContract, getContractApproval, listCo
 import { initStore, type StoreMeta } from './init.js';
 import { type StorePaths, storePaths } from './paths.js';
 import { getProposal, listProposals, writeProposal } from './proposals.js';
+import { type EnqueueInput, enqueueReviewItem, listReviewQueue, nextReviewQueueId } from './review-queue.js';
 import { getRuleStatus, listRuleStatuses, writeRuleStatuses } from './rule-status.js';
 import { getRule, listRules } from './rules.js';
+import { activeRun, listRuns, nextRunId, readRunState, writeRunState } from './runs.js';
 import { type StoreStatus, storeStatus } from './status.js';
 import { listViews, readView, type StoredView, type ViewListItem, writeView } from './views.js';
 
@@ -63,6 +70,7 @@ export {
   proposalSchema,
   writeProposal,
 } from './proposals.js';
+export * from './review-queue.js';
 export * from './rule-status.js';
 export {
   checkKindSchema,
@@ -86,6 +94,7 @@ export {
   serializeRulesDocument,
   toRuleYaml,
 } from './rules.js';
+export * from './runs.js';
 export * from './status.js';
 export * from './views.js';
 
@@ -168,6 +177,22 @@ export interface Store {
     /** 이 View의 열람 수. `since`(보통 머리말 `generatedAt`) 이후만 */
     count(view: ViewName, since?: string): Promise<number>;
   };
+  /** 실행 상태 `runs/<r-id>.json` — 실행: `plumb run`이 쓰고 UI · `plumb runs`가 읽는다 (work-run 3절) */
+  runs: {
+    write(state: RunState | unknown): Promise<RunState>;
+    get(id: RunId): Promise<RunState | undefined>;
+    /** 최근 시작 순 */
+    list(): Promise<RunSummary[]>;
+    nextId(): Promise<RunId>;
+    /** 진행 중인 실행. 동시 1개 (work-run 6절 1번) */
+    active(): Promise<RunSummary | undefined>;
+  };
+  /** 검토 대기열 `review-queue/<q-id>.json` (기획안 §9.2). 판정 화면은 M10 */
+  reviewQueue: {
+    enqueue(input: EnqueueInput): Promise<ReviewQueueItem>;
+    list(openOnly?: boolean): Promise<ReviewQueueItem[]>;
+    nextId(): Promise<ReviewQueueItemId>;
+  };
   status(): Promise<StoreStatus>;
 }
 
@@ -219,6 +244,18 @@ export function openStore(config: StoreConfig, root: string, options: StoreOptio
       list: () => listCodeOpens(paths),
       summary: async () => summarizeCodeOpens(await listCodeOpens(paths)),
       count: (view, since) => countCodeOpens(paths, view, since),
+    },
+    runs: {
+      write: (state) => writeRunState(paths, state),
+      get: (id) => readRunState(paths, id),
+      list: () => listRuns(paths),
+      nextId: () => nextRunId(paths),
+      active: () => activeRun(paths),
+    },
+    reviewQueue: {
+      enqueue: (input) => enqueueReviewItem(paths, input, options.now),
+      list: (openOnly) => listReviewQueue(paths, openOnly),
+      nextId: () => nextReviewQueueId(paths),
     },
     status: () => storeStatus(paths, timing),
   };
