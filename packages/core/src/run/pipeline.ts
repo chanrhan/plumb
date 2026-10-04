@@ -13,9 +13,11 @@
 
 import { readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
+import type { HookCallbackMatcher, PreToolUseHookInput } from '@anthropic-ai/claude-agent-sdk';
 import type { Adapter, AdapterContext } from '../adapter/types.js';
 import { runCheck as defaultRunCheck, type RunCheckDeps, type RunCheckResult } from '../checks/run-check.js';
 import { scanDisputes, toDispute } from '../harness/dispute.js';
+import { toolTargetPath } from '../harness/path-guard.js';
 import { implementerOptions } from '../harness/roles/implementer.js';
 import { testWriterOptions } from '../harness/roles/test-writer.js';
 import { runRole as defaultRunRole, type RoleRunResult, type RunRoleInput } from '../harness/run-role.js';
@@ -148,6 +150,23 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
   };
 
   const aborted = () => deps.signal?.aborted === true;
+  // 모든 파일 도구 호출의 경로를 로그에 남긴다 — 가드는 거부만 적으므로 성공 경로도 보여야 진단이 된다 (#94, r-0001 실측)
+  const logTools: HookCallbackMatcher[] = [
+    {
+      hooks: [
+        async (input) => {
+          const pre = input as PreToolUseHookInput;
+          const target = toolTargetPath(pre.tool_name, pre.tool_input);
+          if (target !== undefined) log(`[tool] ${pre.tool_name} ${target}`);
+          else if (pre.tool_name === 'Bash')
+            log(
+              `[tool] Bash ${JSON.stringify(String((pre.tool_input as { command?: unknown })?.command ?? '')).slice(0, 160)}`,
+            );
+          return {};
+        },
+      ],
+    },
+  ];
   const roleFailure = async (role: Role, r: RoleRunResult, stop: StopState): Promise<RunState | undefined> => {
     await rec.recordRole(role, {
       turns: r.turns,
@@ -195,6 +214,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
         cwd: serviceRoot,
         stubsDir: join(twWork.dir, 'stubs'),
         stopHook: twStop.hook,
+        extraPreToolUse: logTools,
         stderr,
         log,
       }),
@@ -254,6 +274,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
         cwd: serviceRoot,
         disputesDir: imWork.disputesDir,
         stopHook: imStop.hook,
+        extraPreToolUse: logTools,
         stderr,
         log,
       }),
