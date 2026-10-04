@@ -197,6 +197,16 @@ describe('plumb run — 실행', () => {
     expect(h.spawns[0]).toMatchObject({ node: '/usr/bin/node', entry: '/plumb/dist/cli/index.js' });
     expect(h.spawns[0]?.args).toEqual(['--target', dir, 'run', '--rules', RULE.id, '--child', 'r-0001']);
     expect(JSON.parse(h.out.join(''))).toEqual({ id: 'r-0001', pid: 4242 });
+    // 부모가 초기 상태를 먼저 써 둔다 — 바로 `runs show`가 된다
+    const store = openStore(CONFIG, dir);
+    expect(await store.runs.get('r-0001')).toMatchObject({
+      id: 'r-0001',
+      pid: 4242,
+      status: 'running',
+      stage: 1,
+      ruleIds: [RULE.id],
+    });
+    expect((await store.runs.active())?.id).toBe('r-0001');
   });
 
   it('--child <id>: 그 id로 파이프라인을 돌리고 로그는 runs/<id>/run.log에, stdout은 비어 있다', async () => {
