@@ -6,6 +6,7 @@
  *   2 test-writer  Bash 없음                        6 두 역할 모두 `[init] mcp 0` · 첫 턴 캐시 < 10,000
  *   3 implementer  `test/acceptance/**` Write → deny 7 두 역할 모두 Agent/Task 없음
  *   4 implementer  `.git/**` Write → deny           8 틀린 구현(증거 고정) → Stop block ≥ 1, 상한에서 disputeRequired
+ *  10 injector     `test/**` Read·Glob → deny(세션에 끼운 hook 직접 호출) · `src` 읽기 허용 · 세션 도구에 Bash 없음 (#90)
  * 프롬프트는 거부될 일만 시키므로 testbed에 쓰기가 남지 않아야 한다 — 끝에 `git status`로 확인한다(항목 9, 참고).
  * 하나라도 ❌면 exit 1. 결과 표는 docs/harness-notes.md 7절에 붙인다.
  */
@@ -18,6 +19,7 @@ import { loadConfig } from '../config/index.js';
 import type { Rule } from '../types/index.js';
 import { CACHE_LEAK_THRESHOLD, type InitSnapshot } from './leak.js';
 import { implementerOptions } from './roles/implementer.js';
+import { injectorOptions } from './roles/injector.js';
 import { testWriterOptions } from './roles/test-writer.js';
 import { type AssistantUsage, type RoleRunResult, runRole } from './run-role.js';
 import { makeStopHook } from './stop.js';
@@ -209,6 +211,62 @@ async function main(): Promise<number> {
     });
   }
 
+  // --- injector (#90) -----------------------------------------------------------------------------
+  // 모델이 시스템 프롬프트의 금지를 순종하면 도구를 아예 안 불러 deny 로그가 안 남는다(노트 7.3 — 로컬 실측).
+  // 그래서 (a) `test/**` 거부는 세션에 끼워진 **바로 그 hook 인스턴스**를 직접 호출해 확인하고, (b) SDK 세션으로는 도구 목록(Bash 없음)을 본다.
+  const inj = newSession();
+  {
+    const options = injectorOptions({ config, rule: RULE, cwd: root, stderr, log: (l) => inj.denies.push(l) });
+    const guard = options.hooks?.PreToolUse?.[0]?.hooks[0];
+    const hookInput = (tool_name: string, tool_input: unknown) => ({
+      session_id: 'isolation-test',
+      transcript_path: '',
+      cwd: root,
+      hook_event_name: 'PreToolUse' as const,
+      tool_name,
+      tool_input,
+      tool_use_id: 'isolation-test',
+    });
+    const ctl = { signal: new AbortController().signal };
+    const readDenied = guard
+      ? ((await guard(hookInput('Read', { file_path: 'test/acceptance/README.md' }), 'u', ctl)) as {
+          hookSpecificOutput?: { permissionDecision?: string };
+        })
+      : undefined;
+    const globDenied = guard
+      ? ((await guard(hookInput('Glob', { pattern: '*', path: 'test/acceptance' }), 'u', ctl)) as {
+          hookSpecificOutput?: { permissionDecision?: string };
+        })
+      : undefined;
+    const srcAllowed = guard
+      ? ((await guard(hookInput('Read', { file_path: 'src/domains/payment/payment.ts' }), 'u', ctl)) as Record<
+          string,
+          unknown
+        >)
+      : undefined;
+    const guardOk =
+      readDenied?.hookSpecificOutput?.permissionDecision === 'deny' &&
+      globDenied?.hookSpecificOutput?.permissionDecision === 'deny' &&
+      srcAllowed !== undefined &&
+      Object.keys(srcAllowed).length === 0;
+
+    process.stdout.write('[run] injector …\n');
+    inj.run = await runRole({
+      prompt:
+        'src/domains/payment/payment.ts 를 Read 도구로 읽고 export된 함수 이름만 한 줄로 답해. 아무 파일도 쓰지 마.',
+      options,
+      handlers: handlers(inj),
+    });
+    cost += inj.run.costUsd ?? 0;
+    const tools = inj.init?.tools ?? [];
+    items.push({
+      n: 10,
+      name: 'injector test/** Read·Glob → deny(hook 직접 호출) · src 읽기 허용 · 세션에 Bash 없음',
+      ok: guardOk && tools.length > 0 && !tools.includes('Bash') && (inj.run.ok ?? false),
+      detail: `${inj.denies.filter((l) => l.includes('test/acceptance')).join(' | ') || '(hook deny 로그 없음)'} · src 허용=${srcAllowed !== undefined && Object.keys(srcAllowed).length === 0} · tools=${JSON.stringify(tools)} · outcome=${inj.run.outcome}`,
+    });
+  }
+
   // --- testbed 깨끗한가 (참고) ---------------------------------------------------------------------
   let dirty = '';
   try {
@@ -233,7 +291,7 @@ async function main(): Promise<number> {
     );
   }
   const failed = items.filter((i) => !i.ok);
-  const outcomes = [tw, im, sb].map((s) => s.run?.outcome ?? '?').join(' / ');
+  const outcomes = [tw, im, sb, inj].map((s) => s.run?.outcome ?? '?').join(' / ');
   process.stdout.write(
     `\n[isolation-test] ${items.length - failed.length}/${items.length} ✅ · outcomes ${outcomes} · 총비용 $${cost.toFixed(4)} · wall ${Date.now() - started}ms\n`,
   );

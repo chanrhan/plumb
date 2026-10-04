@@ -59,6 +59,7 @@ export * from './code-opens.js';
 export * from './contracts.js';
 export * from './errors.js';
 export * from './init.js';
+export * from './injections.js';
 export * from './paths.js';
 export {
   getProposal,
