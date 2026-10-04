@@ -3,8 +3,10 @@
 // 이 파일은 현재 코드가 어떻게 동작하는지를 그대로 기록한다. 그래서 "8일 지난 결제도 환불된다"가
 // 통과하는 케이스로 들어 있다 — 그것이 지금의 동작이고, 첫 슬라이스의 출발점이다 (§8.3, §15.1).
 // repo.ts 는 모킹한다. DB 없이 돈다.
+// 공개 진입점은 tsconfig `@/*` 별칭으로 import 한다 — vitest.config.ts 의 resolve.alias 가 풀리는지 이 파일이 증명한다(#99).
+// `../repo` 모킹은 상대 경로 그대로: index → payment → ./repo 이므로 같은 모듈(src/domains/payment/repo.ts)을 가리킨다.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createPayment, PaymentNotFoundError, refund } from '../index';
+import { createPayment, PaymentNotFoundError, refund } from '@/domains/payment';
 import * as repo from '../repo';
 import type { Payment, Refund } from '../types';
 
