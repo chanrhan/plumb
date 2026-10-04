@@ -96,14 +96,19 @@ function acceptanceFiles(rules: readonly Rule[]): string[] {
 }
 
 /** ① 승인 확인 + 동시 1개 + 예산 상한 존재 (work-run 4절 · 5절) */
-export async function checkPreconditions(deps: Pick<PipelineDeps, 'config' | 'store' | 'ruleIds'>): Promise<Rule[]> {
+export async function checkPreconditions(
+  deps: Pick<PipelineDeps, 'config' | 'store' | 'ruleIds' | 'runId'>,
+): Promise<Rule[]> {
   if (deps.config.run?.maxBudgetUsd === undefined)
     throw new RunPreconditionError(
       'no-budget',
       'plumb.config.json run.maxBudgetUsd가 없다 — 상한 없이는 실행하지 않는다',
     );
+  // `plumb run --detach`의 부모는 자식을 띄우기 전에 같은 id의 초기 상태(running)를 먼저 쓴다(#87). 자식이 그것을 "다른 실행"으로
+  // 보면 자기 자신 때문에 run-in-progress로 죽고 상태는 running으로 남는다(#115) — 자기 id는 뺀다
   const active = await deps.store.runs.active();
-  if (active) throw new RunPreconditionError('run-in-progress', `${active.id}이 진행 중이다 (동시 1개)`);
+  if (active && active.id !== deps.runId)
+    throw new RunPreconditionError('run-in-progress', `${active.id}이 진행 중이다 (동시 1개)`);
   const rules: Rule[] = [];
   for (const id of deps.ruleIds) {
     const rule = await deps.store.rules.get(id);
