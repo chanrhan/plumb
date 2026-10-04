@@ -90,3 +90,119 @@ export function testWriterOptions(input: TestWriterInput): Options {
     stderr: input.stderr,
   });
 }
+
+// ---------------------------------------------------------------------------
+// 재검토 (이슈 #88, 기획안 §8.4) — implementer의 이의 제기를 test-writer가 읽기 전용으로 판정한다. 결과는 advisory
+// ---------------------------------------------------------------------------
+
+export const TEST_WRITER_REVIEW_TOOLS = ['Read', 'Glob', 'Grep'] as const;
+
+/** 재검토 판정. `Dispute.advisory.verdict`와 같은 값 */
+export const REVIEW_VERDICTS = ['test-correct', 'test-wrong', 'ambiguous'] as const;
+export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
+
+export interface ReviewOutput {
+  verdict: ReviewVerdict;
+  /** 한 문장 근거 */
+  reason: string;
+  /** 진술과 테스트가 갈리는 구체 입력 (있으면) */
+  evidenceInput?: string;
+}
+
+/** SDK `outputFormat` JSON 스키마 — 모델이 이 모양으로만 답한다 */
+export const REVIEW_OUTPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    verdict: { type: 'string', enum: [...REVIEW_VERDICTS] },
+    reason: { type: 'string' },
+    evidenceInput: { type: 'string' },
+  },
+  required: ['verdict', 'reason'],
+  additionalProperties: false,
+} as const;
+
+export interface TestWriterReviewInput {
+  config: Pick<PlumbConfig, 'roles'>;
+  rule: Rule;
+  /** 이의 제기 파일의 요약과 본문 */
+  dispute: { summary: string; body: string };
+  /** 역할 cwd = 서비스 루트(worktree). 테스트 파일을 읽는다 */
+  cwd: string;
+  /** 재검토는 짧다. 기본 8턴 */
+  maxTurns?: number;
+  log?: (line: string) => void;
+  stderr?: (data: string) => void;
+}
+
+export function testWriterReviewSystemPrompt(input: Pick<TestWriterReviewInput, 'rule' | 'dispute'>): string {
+  const files = input.rule.checks.filter((c) => c.kind === 'acceptance' || c.kind === 'pbt').map((c) => c.ref);
+  return [
+    '너는 Plumb의 테스트 작성자(test-writer)다. 구현자가 네 인수 테스트에 이의를 제기했다. 테스트가 규칙 진술을 올바르게 검증하는지 판정한다.',
+    '',
+    `## 규칙 ${input.rule.id}`,
+    `진술: ${input.rule.statement}`,
+    `테스트 파일: ${files.join(', ') || '(없음)'}`,
+    '',
+    '## 이의 제기',
+    input.dispute.summary,
+    input.dispute.body,
+    '',
+    '## 판정 기준',
+    '- test-correct: 테스트가 진술을 그대로 검증한다. 구현자가 구현을 고쳐야 한다',
+    '- test-wrong: 테스트가 진술과 다른 것을 요구한다(경계 · 입력 형태 · 없는 API). 테스트를 고쳐야 한다 — 어디가 어떻게 틀렸는지 reason에',
+    '- ambiguous: 진술이 두 해석을 허용해 테스트와 구현자가 다른 쪽을 골랐다. 사람이 진술을 명확히 해야 한다',
+    '- evidenceInput: 진술과 테스트가 갈리는 구체 입력 하나(예: paidAt=…, requestedAt=정확히 7일)',
+    '',
+    '## 규칙',
+    '- 파일은 읽기만 한다(test/** · 계약 · 이 디렉토리). src/**는 읽을 수 없다. 아무것도 쓰지 않는다',
+    '- 이 판정은 참고용(advisory)이다 — 규칙 상태를 바꾸지 않는다. 사람이 검토 대기열에서 최종 판단한다',
+    '- 답은 지정된 JSON 모양으로만 한다',
+  ].join('\n');
+}
+
+/** 읽기 전용 · 구조화 출력. 쓰기 도구가 없고 `src/**` 읽기는 가드가 막는다 */
+export function testWriterReviewOptions(input: TestWriterReviewInput): Options {
+  const guard = makePathGuard({
+    root: input.cwd,
+    rules: [{ access: 'read', globs: ['src/**'], mode: 'deny' }],
+    log: input.log,
+  });
+  const base = buildRoleOptions({
+    role: 'test-writer',
+    config: input.config,
+    cwd: input.cwd,
+    systemPrompt: testWriterReviewSystemPrompt(input),
+    tools: TEST_WRITER_REVIEW_TOOLS,
+    extraDisallowedTools: ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit'],
+    hooks: { PreToolUse: [{ hooks: [guard] }] },
+    stderr: input.stderr,
+  });
+  return {
+    ...base,
+    maxTurns: input.maxTurns ?? 8,
+    outputFormat: { type: 'json_schema', schema: REVIEW_OUTPUT_SCHEMA },
+  };
+}
+
+/** 구조화 출력 → ReviewOutput. 모양이 어긋나면 `ambiguous`로 접는다 — 재검토 실패가 실행을 멈추지 않는다 */
+export function parseReviewOutput(raw: unknown): ReviewOutput {
+  const r = raw as Partial<ReviewOutput> | null;
+  if (
+    r &&
+    typeof r === 'object' &&
+    typeof r.verdict === 'string' &&
+    (REVIEW_VERDICTS as readonly string[]).includes(r.verdict)
+  ) {
+    return {
+      verdict: r.verdict as ReviewVerdict,
+      reason: typeof r.reason === 'string' && r.reason.trim() ? r.reason.trim() : '(근거 없음)',
+      ...(typeof r.evidenceInput === 'string' && r.evidenceInput.trim()
+        ? { evidenceInput: r.evidenceInput.trim() }
+        : {}),
+    };
+  }
+  return {
+    verdict: 'ambiguous',
+    reason: `재검토 출력을 해석하지 못했다: ${JSON.stringify(raw)?.slice(0, 120) ?? String(raw)}`,
+  };
+}

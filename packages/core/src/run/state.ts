@@ -147,6 +147,12 @@ export class RunRecorder {
     return this.persist();
   }
 
+  /** 재검토 결과로 같은 id의 항목을 바꾼다 (#88) */
+  async replaceDispute(d: Dispute): Promise<RunState> {
+    this.state = { ...this.state, disputes: this.state.disputes.map((x) => (x.id === d.id ? d : x)) };
+    return this.persist();
+  }
+
   async setCapturedOutput(captured: CapturedOutput): Promise<RunState> {
     this.state = { ...this.state, capturedOutput: captured };
     return this.persist();
