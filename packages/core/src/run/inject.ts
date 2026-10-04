@@ -8,6 +8,7 @@
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { Adapter, AdapterContext } from '../adapter/types.js';
+import { hasDiffTargets, recordDiffSearch, runDiffSearch } from '../checks/diff-search.js';
 import { injectorOptions, parseInjectionOutput } from '../harness/roles/injector.js';
 import { runRole as defaultRunRole, type RoleRunResult, type RunRoleInput } from '../harness/run-role.js';
 import { makeStopHook } from '../harness/stop.js';
@@ -15,7 +16,7 @@ import { resolveWorkRoot } from '../harness/work-dir.js';
 import { sha256 } from '../store/fs.js';
 import type { Store } from '../store/index.js';
 import { nextInjectionId, writeInjection } from '../store/injections.js';
-import type { InjectionId, PlumbConfig, Rule, Validity } from '../types/index.js';
+import type { InjectionId, PlumbConfig, Rule, RunId, Validity } from '../types/index.js';
 import { collectEvidence } from './evidence.js';
 import { changedPath, createWorktree, removeWorktree, type Worktree, worktreeChanges } from './worktree.js';
 
@@ -23,9 +24,13 @@ export interface InjectOnceDeps {
   config: PlumbConfig;
   /** `plumb.config.json`이 있는 원본 루트 */
   root: string;
-  store: Pick<Store, 'paths'>;
+  store: Pick<Store, 'paths' | 'reviewQueue'>;
   adapter: Pick<Adapter, 'runTests'>;
   rule: Rule;
+  /** 차이 탐색(#91)의 `DiffSearch.runId`. 없으면 `r-0000`(파이프라인 밖 단독 실행) */
+  runId?: RunId;
+  /** 차이 탐색을 끈다(시험용). 기본: `plumb/diff-targets.ts`가 있으면 돈다 */
+  diffSearch?: boolean;
   /** 기록 id. 없으면 다음 번호 */
   id?: InjectionId;
   runRole?: (input: RunRoleInput) => Promise<RoleRunResult>;
@@ -144,10 +149,29 @@ export async function injectOnce(deps: InjectOnceDeps): Promise<InjectOnceResult
       at: now().toISOString(),
       checkFileHashes: await hashFiles(origServiceRoot, files),
     };
-    const validity: Validity = caught
+    let validity: Validity = caught
       ? { ...base, result: 'check-failed', valid: true }
       : { ...base, result: 'check-passed', valid: false };
     await writeInjection(deps.store.paths, validity);
+
+    // 통과해 버린 주입 → 차이 탐색 (#91). 대상 정의(plumb/diff-targets.ts)가 있을 때만
+    if (validity.valid === false && deps.diffSearch !== false && (await hasDiffTargets(origServiceRoot))) {
+      const out = await runDiffSearch({
+        originalRoot: origServiceRoot,
+        injectedRoot: serviceRoot,
+        ruleId: deps.rule.id,
+        numRuns: deps.config.diffSearch?.numRuns ?? 1000,
+        seed: deps.config.diffSearch?.seed,
+      });
+      const recorded = await recordDiffSearch({
+        store: deps.store,
+        validity,
+        runId: deps.runId ?? ('r-0000' as RunId),
+        out,
+      });
+      validity = recorded;
+      log(`[inject] ${id} 차이 탐색 ${out.differing}/${out.inputs} → ${recorded.diffSearch.verdict}`);
+    }
     return {
       validity,
       role: { turns: r.turns, costUsd: r.costUsd, outcome: r.outcome },
