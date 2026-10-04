@@ -126,3 +126,19 @@ export function changedPath(line: string): string {
   const arrow = p.indexOf(' -> ');
   return arrow >= 0 ? p.slice(arrow + 4) : p;
 }
+
+/**
+ * 역할이 남긴 변경을 worktree 안에서 커밋한다 — 커밋은 하네스가 한다(implementer 프롬프트 "커밋은 하네스가"). 변경이 없으면 null.
+ * ⑤ 위반 주입의 worktree는 이 HEAD에서 갈라진다(구현 + 인수 테스트 포함). `RunState.commits`의 원자료
+ */
+export async function commitWorktree(
+  wt: Pick<Worktree, 'repoRoot'>,
+  message: string,
+): Promise<{ from: string; to: string } | null> {
+  const from = await git(wt.repoRoot, ['rev-parse', 'HEAD']);
+  if ((await worktreeChanges(wt)).length === 0) return null;
+  await git(wt.repoRoot, ['add', '-A']);
+  await git(wt.repoRoot, ['-c', 'user.name=plumb', '-c', 'user.email=plumb@localhost', 'commit', '-q', '-m', message]);
+  const to = await git(wt.repoRoot, ['rev-parse', 'HEAD']);
+  return { from, to };
+}

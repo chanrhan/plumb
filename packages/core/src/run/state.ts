@@ -153,6 +153,12 @@ export class RunRecorder {
     return this.persist();
   }
 
+  /** 하네스가 worktree에 커밋한 범위 (`RunState.commits`, 변경 로그 View의 세션 역매핑) */
+  async setCommits(commits: { from: string; to: string }): Promise<RunState> {
+    this.state = { ...this.state, commits: { from: this.state.commits?.from ?? commits.from, to: commits.to } };
+    return this.persist();
+  }
+
   async setCapturedOutput(captured: CapturedOutput): Promise<RunState> {
     this.state = { ...this.state, capturedOutput: captured };
     return this.persist();

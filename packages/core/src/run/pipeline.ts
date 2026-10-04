@@ -26,10 +26,22 @@ import { generateDeclarationStubs } from '../harness/stubs.js';
 import { ensureRoleWorkDir, resolveWorkRoot } from '../harness/work-dir.js';
 import type { Store } from '../store/index.js';
 import type { PlumbConfig, Role, Rule, RuleId, RuleStatus, RunId, RunState } from '../types/index.js';
+import {
+  buildViewContext,
+  generateViews as defaultGenerateViews,
+  type ViewGenerationResult,
+} from '../views/generate.js';
+import type { ViewContext } from '../views/types.js';
 import { handleDisputes } from './dispute-flow.js';
 import { collectEvidence } from './evidence.js';
+import {
+  injectOnce as defaultInjectOnce,
+  InjectionError,
+  type InjectOnceDeps,
+  type InjectOnceResult,
+} from './inject.js';
 import { newRunState, RunRecorder } from './state.js';
-import { createWorktree, type Worktree } from './worktree.js';
+import { commitWorktree, createWorktree, type Worktree } from './worktree.js';
 
 export class RunPreconditionError extends Error {
   constructor(
@@ -54,6 +66,12 @@ export interface PipelineDeps {
   runRole?: (input: RunRoleInput) => Promise<RoleRunResult>;
   runCheck?: (deps: RunCheckDeps) => Promise<RunCheckResult>;
   createWorktree?: (serviceRoot: string, dir: string) => Promise<Worktree>;
+  /** ⑤ 위반 주입(#90). 테스트는 가짜를 준다 */
+  injectOnce?: (deps: InjectOnceDeps) => Promise<InjectOnceResult>;
+  /** ⑥ View 갱신. 테스트는 가짜를 준다 */
+  generateViews?: (ctx: ViewContext) => Promise<ViewGenerationResult[]>;
+  /** ⑤에서 검사가 약하면 ②로 되돌아가는 횟수 상한. 기본 1 */
+  maxRewinds?: number;
   /** worktree 없이 원본에서 돌린다(시험용). 기본 false */
   inPlace?: boolean;
   now?: () => Date;
@@ -191,161 +209,240 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
     await rec.finishStage({ stage: 1, approvedAt });
     const expected = acceptanceFiles(rules);
 
-    // ② test-writer
-    if (aborted()) return { state: await rec.abort(), worktree };
-    await rec.startStage(2, 'test-writer');
-    const twWork = await ensureRoleWorkDir(roleWork, 'test-writer');
-    const stubsDir = join(twWork.dir, 'stubs');
-    const stubs = await generateDeclarationStubs({ serviceRoot, outDir: stubsDir });
-    log(`[stage 2] stubs ${stubs.files.length} (tsc exit ${stubs.exitCode}) → ${relative(serviceRoot, stubsDir)}`);
-    const twStop = makeStopHook({
-      kind: 'all-fail',
-      stopBlockLimit: deps.config.stopBlockLimit,
-      collect: async () =>
-        (await collectEvidence({ adapter: deps.adapter, ctx, scope: expected, expectedFiles: expected, logPath }))
-          .evidence,
-      log,
-    });
-    const twRun = await runRole({
-      prompt: `담당 규칙 ${rules.map((r) => r.id).join(', ')}의 인수 테스트를 ${expected.join(', ')}에 써라. 끝내려 하면 하네스가 테스트를 돌려 확인한다.`,
-      options: testWriterOptions({
-        config: deps.config,
-        rules,
-        cwd: serviceRoot,
-        stubsDir: join(twWork.dir, 'stubs'),
-        stopHook: twStop.hook,
-        extraPreToolUse: logTools,
-        stderr,
+    const maxRewinds = deps.maxRewinds ?? 1;
+    const injectOnce = deps.injectOnce ?? defaultInjectOnce;
+    const generateViews = deps.generateViews ?? defaultGenerateViews;
+    let rewindHints: string[] = [];
+    for (let round = 1; round <= maxRewinds + 1; round++) {
+      // ② test-writer
+      if (aborted()) return { state: await rec.abort(), worktree };
+      await rec.startStage(2, 'test-writer');
+      const twWork = await ensureRoleWorkDir(roleWork, 'test-writer');
+      const stubsDir = join(twWork.dir, 'stubs');
+      const stubs = await generateDeclarationStubs({ serviceRoot, outDir: stubsDir });
+      log(`[stage 2] stubs ${stubs.files.length} (tsc exit ${stubs.exitCode}) → ${relative(serviceRoot, stubsDir)}`);
+      const twStop = makeStopHook({
+        kind: 'all-fail',
+        stopBlockLimit: deps.config.stopBlockLimit,
+        collect: async () =>
+          (await collectEvidence({ adapter: deps.adapter, ctx, scope: expected, expectedFiles: expected, logPath }))
+            .evidence,
         log,
-      }),
-    });
-    const twFail = await roleFailure('test-writer', twRun, twStop.state);
-    if (twFail) return { state: twFail, worktree };
-    const ev2 = await collectEvidence({
-      adapter: deps.adapter,
-      ctx,
-      scope: expected,
-      expectedFiles: expected,
-      logPath,
-    });
-    await rec.setCapturedOutput(ev2.captured);
-    const allFailed =
-      ev2.tally.total > 0 &&
-      ev2.tally.failed === ev2.tally.total &&
-      (ev2.evidence.expectedFiles ?? []).every((f) => ev2.evidence.presentFiles?.includes(f));
-    await rec.finishStage({ stage: 2, tests: ev2.tally, allFailed });
-    log(`[stage 2] ${ev2.tally.failed}/${ev2.tally.total} 실패 → ${allFailed ? '✔' : '✘'}`);
-    if (twStop.state.disputeRequired) return { state: await rec.fail('stopBlockLimit', 'test-writer'), worktree };
-    if (!allFailed)
-      return {
-        state: await rec.fail(
-          'stage-2-not-all-failed',
-          'test-writer',
-          `테스트 ${ev2.tally.passed}/${ev2.tally.total} 통과 — 구현 전인데 통과하는 테스트`,
-        ),
-        worktree,
-      };
-
-    // ③ implementer
-    if (aborted()) return { state: await rec.abort(), worktree };
-    await rec.startStage(3, 'implementer');
-    const imWork = await ensureRoleWorkDir(roleWork, 'implementer');
-    const imStop = makeStopHook({
-      kind: 'all-pass-or-dispute',
-      stopBlockLimit: deps.config.stopBlockLimit,
-      collect: async () =>
-        (
-          await collectEvidence({
-            adapter: deps.adapter,
-            ctx,
-            scope: expected,
-            disputesDir: imWork.disputesDir,
-            logPath,
-          })
-        ).evidence,
-      log,
-    });
-    const imRun = await runRole({
-      prompt: `실패하는 인수 테스트 ${expected.join(', ')}를 통과시키도록 구현을 고쳐라. 테스트가 틀렸다고 보면 ${imWork.disputesDir}에 이의 제기 파일을 써라.`,
-      options: implementerOptions({
-        config: deps.config,
-        rules,
-        failingTests: expected,
-        cwd: serviceRoot,
-        disputesDir: imWork.disputesDir,
-        stopHook: imStop.hook,
-        extraPreToolUse: logTools,
-        stderr,
-        log,
-      }),
-    });
-    const imFail = await roleFailure('implementer', imRun, imStop.state);
-    if (imFail) return { state: imFail, worktree };
-    const ev3 = await collectEvidence({
-      adapter: deps.adapter,
-      ctx,
-      scope: expected,
-      disputesDir: imWork.disputesDir,
-      logPath,
-    });
-    await rec.setCapturedOutput(ev3.captured);
-    const disputes = await scanDisputes(imWork.disputesDir);
-    for (const d of disputes.valid)
-      await rec.addDispute(toDispute(d, 'implementer', 'test-writer', now().toISOString()));
-    const allPassed = ev3.tally.total > 0 && ev3.tally.failed === 0;
-    const firstDispute = disputes.valid[0];
-    await rec.finishStage({
-      stage: 3,
-      tests: ev3.tally,
-      allPassed,
-      ...(firstDispute ? { disputeId: firstDispute.id } : {}),
-    });
-    log(
-      `[stage 3] ${ev3.tally.passed}/${ev3.tally.total} 통과${disputes.valid.length ? ` · 이의 제기 ${disputes.valid.length}건` : ''} → ${allPassed || firstDispute ? '✔' : '✘'}`,
-    );
-    if (imStop.state.disputeRequired && !firstDispute)
-      return { state: await rec.fail('stopBlockLimit', 'implementer'), worktree };
-
-    if (disputes.valid.length > 0) {
-      // 이의 제기 → test-writer 재검토(advisory) → 검토 대기열 (#88). 실패해도 대기열에는 올라간다
-      const reviewed = await handleDisputes({
-        config: deps.config,
-        store: deps.store,
-        rules,
-        disputes: rec.current.disputes,
-        readFile: (p) => readFile(p, 'utf8'),
-        cwd: serviceRoot,
-        runId,
-        runRole,
-        now,
-        log,
-        stderr,
       });
-      for (const r of reviewed) {
-        await rec.replaceDispute(r.dispute);
-        await rec.recordRole('test-writer', { turns: r.usage.turns, costUsd: r.usage.costUsd });
+      const twRun = await runRole({
+        prompt: `담당 규칙 ${rules.map((r) => r.id).join(', ')}의 인수 테스트를 ${expected.join(', ')}에 써라. 끝내려 하면 하네스가 테스트를 돌려 확인한다.${rewindHints.length ? `\n\n⚠ 위반 주입이 검사를 통과했다 — 아래 위반을 잡도록 테스트를 보강하라(기존 테스트는 유지):\n- ${rewindHints.join('\n- ')}` : ''}`,
+        options: testWriterOptions({
+          config: deps.config,
+          rules,
+          cwd: serviceRoot,
+          stubsDir: join(twWork.dir, 'stubs'),
+          stopHook: twStop.hook,
+          extraPreToolUse: logTools,
+          stderr,
+          log,
+        }),
+      });
+      const twFail = await roleFailure('test-writer', twRun, twStop.state);
+      if (twFail) return { state: twFail, worktree };
+      const ev2 = await collectEvidence({
+        adapter: deps.adapter,
+        ctx,
+        scope: expected,
+        expectedFiles: expected,
+        logPath,
+      });
+      await rec.setCapturedOutput(ev2.captured);
+      const allFailed =
+        ev2.tally.total > 0 &&
+        ev2.tally.failed === ev2.tally.total &&
+        (ev2.evidence.expectedFiles ?? []).every((f) => ev2.evidence.presentFiles?.includes(f));
+      await rec.finishStage({ stage: 2, tests: ev2.tally, allFailed });
+      log(`[stage 2] ${ev2.tally.failed}/${ev2.tally.total} 실패 → ${allFailed ? '✔' : '✘'}`);
+      if (twStop.state.disputeRequired) return { state: await rec.fail('stopBlockLimit', 'test-writer'), worktree };
+      if (!allFailed)
+        return {
+          state: await rec.fail(
+            'stage-2-not-all-failed',
+            'test-writer',
+            `테스트 ${ev2.tally.passed}/${ev2.tally.total} 통과 — 구현 전인데 통과하는 테스트`,
+          ),
+          worktree,
+        };
+
+      // ③ implementer
+      if (aborted()) return { state: await rec.abort(), worktree };
+      await rec.startStage(3, 'implementer');
+      const imWork = await ensureRoleWorkDir(roleWork, 'implementer');
+      const imStop = makeStopHook({
+        kind: 'all-pass-or-dispute',
+        stopBlockLimit: deps.config.stopBlockLimit,
+        collect: async () =>
+          (
+            await collectEvidence({
+              adapter: deps.adapter,
+              ctx,
+              scope: expected,
+              disputesDir: imWork.disputesDir,
+              logPath,
+            })
+          ).evidence,
+        log,
+      });
+      const imRun = await runRole({
+        prompt: `실패하는 인수 테스트 ${expected.join(', ')}를 통과시키도록 구현을 고쳐라. 테스트가 틀렸다고 보면 ${imWork.disputesDir}에 이의 제기 파일을 써라.`,
+        options: implementerOptions({
+          config: deps.config,
+          rules,
+          failingTests: expected,
+          cwd: serviceRoot,
+          disputesDir: imWork.disputesDir,
+          stopHook: imStop.hook,
+          extraPreToolUse: logTools,
+          stderr,
+          log,
+        }),
+      });
+      const imFail = await roleFailure('implementer', imRun, imStop.state);
+      if (imFail) return { state: imFail, worktree };
+      const ev3 = await collectEvidence({
+        adapter: deps.adapter,
+        ctx,
+        scope: expected,
+        disputesDir: imWork.disputesDir,
+        logPath,
+      });
+      await rec.setCapturedOutput(ev3.captured);
+      const disputes = await scanDisputes(imWork.disputesDir);
+      for (const d of disputes.valid)
+        await rec.addDispute(toDispute(d, 'implementer', 'test-writer', now().toISOString()));
+      const allPassed = ev3.tally.total > 0 && ev3.tally.failed === 0;
+      const firstDispute = disputes.valid[0];
+      await rec.finishStage({
+        stage: 3,
+        tests: ev3.tally,
+        allPassed,
+        ...(firstDispute ? { disputeId: firstDispute.id } : {}),
+      });
+      log(
+        `[stage 3] ${ev3.tally.passed}/${ev3.tally.total} 통과${disputes.valid.length ? ` · 이의 제기 ${disputes.valid.length}건` : ''} → ${allPassed || firstDispute ? '✔' : '✘'}`,
+      );
+      if (imStop.state.disputeRequired && !firstDispute)
+        return { state: await rec.fail('stopBlockLimit', 'implementer'), worktree };
+
+      if (disputes.valid.length > 0) {
+        // 이의 제기 → test-writer 재검토(advisory) → 검토 대기열 (#88). 실패해도 대기열에는 올라간다
+        const reviewed = await handleDisputes({
+          config: deps.config,
+          store: deps.store,
+          rules,
+          disputes: rec.current.disputes,
+          readFile: (p) => readFile(p, 'utf8'),
+          cwd: serviceRoot,
+          runId,
+          runRole,
+          now,
+          log,
+          stderr,
+        });
+        for (const r of reviewed) {
+          await rec.replaceDispute(r.dispute);
+          await rec.recordRole('test-writer', { turns: r.usage.turns, costUsd: r.usage.costUsd });
+        }
+        if (rec.overBudget()) return { state: await rec.budgetExceeded(), worktree };
       }
+
+      // ④ plumb check (worktree에 대고; 기록은 원본 저장소에)
+      if (aborted()) return { state: await rec.abort(), worktree };
+      await rec.startStage(4, null);
+      const check = await runCheckFn({
+        config: deps.config,
+        root: worktree ? worktree.serviceRoot : deps.root,
+        store: deps.store,
+        adapter: deps.adapter,
+        now,
+      });
+      const byRule = Object.fromEntries(
+        check.statuses.filter((s) => deps.ruleIds.includes(s.ruleId)).map((s) => [s.ruleId, s.detail.status]),
+      ) as Record<RuleId, RuleStatus>;
+      await rec.finishStage({ stage: 4, checkRunId: check.run.runId, byRule });
+      log(`[stage 4] check ${check.run.runId} → ${JSON.stringify(byRule)}`);
+      if (check.runnerFailed) return { state: await rec.fail('runner-error', undefined, '검사 러너 실패'), worktree };
       if (rec.overBudget()) return { state: await rec.budgetExceeded(), worktree };
+
+      // ⑤ 위반 주입 — 규칙마다 1건. 구현·테스트를 worktree에 커밋한 HEAD에서 갈라진다(하네스가 커밋한다)
+      if (aborted()) return { state: await rec.abort(), worktree };
+      await rec.startStage(5, 'injector');
+      if (worktree) {
+        const committed = await commitWorktree(worktree, `plumb run ${runId} round ${round}: ②③ 결과`);
+        if (committed) {
+          await rec.setCommits(committed);
+          log(`[stage 5] worktree 커밋 ${committed.from.slice(0, 7)}..${committed.to.slice(0, 7)}`);
+        }
+      }
+      let injections = 0;
+      let caught = 0;
+      const weakExamples: string[] = [];
+      for (const rule of rules) {
+        try {
+          const r = await injectOnce({
+            config: deps.config,
+            root: worktree ? worktree.serviceRoot : deps.root,
+            store: deps.store,
+            adapter: deps.adapter,
+            rule,
+            runId,
+            stderr,
+            log,
+            now,
+          });
+          injections += 1;
+          await rec.recordRole('injector', { turns: r.role.turns, costUsd: r.role.costUsd });
+          if (r.validity.valid) caught += 1;
+          else if (r.validity.diffSearch?.verdict === 'weak-check')
+            weakExamples.push(`${rule.id}: ${r.validity.description}`);
+          log(
+            `[stage 5] ${rule.id} ${r.validity.id} → ${r.validity.valid ? '잡힘 ✔' : `통과해 버림 ✘ (${r.validity.diffSearch?.verdict ?? '차이 탐색 없음'})`}`,
+          );
+        } catch (error) {
+          if (error instanceof InjectionError) log(`[stage 5] ${rule.id} 주입 불가: ${error.message}`);
+          else throw error;
+        }
+      }
+      const weak = weakExamples.length > 0;
+      await rec.finishStage({ stage: 5, injections, caught, weak });
+      if (rec.overBudget()) return { state: await rec.budgetExceeded(), worktree };
+      if (weak && round <= maxRewinds) {
+        // 검사가 약하다 → ②로 되돌아가 테스트 보강 (기획안 §8.3). 되돌림은 상한까지만
+        rewindHints = weakExamples;
+        log(`[stage 5] 검사 약함 → ② 되돌림 (${round}/${maxRewinds})`);
+        continue;
+      }
+      if (weak) {
+        await deps.store.reviewQueue.enqueue({
+          kind: 'undetermined-injection',
+          ruleIds: deps.ruleIds,
+          runId,
+          summary: `검사 약함(weak-check)이 ${maxRewinds}회 보강 뒤에도 남음: ${weakExamples.join(' · ')}`,
+        });
+      }
+      break;
     }
 
-    // ④ plumb check (worktree에 대고; 기록은 원본 저장소에)
+    // ⑥ View 갱신 + 이 실행이 올린 검토 대기열 수
     if (aborted()) return { state: await rec.abort(), worktree };
-    await rec.startStage(4, null);
-    const check = await runCheckFn({
+    await rec.startStage(6, null);
+    const viewCtx = await buildViewContext({
       config: deps.config,
       root: worktree ? worktree.serviceRoot : deps.root,
       store: deps.store,
-      adapter: deps.adapter,
+      loaded: { adapter: deps.adapter },
       now,
     });
-    const byRule = Object.fromEntries(
-      check.statuses.filter((s) => deps.ruleIds.includes(s.ruleId)).map((s) => [s.ruleId, s.detail.status]),
-    ) as Record<RuleId, RuleStatus>;
-    await rec.finishStage({ stage: 4, checkRunId: check.run.runId, byRule });
-    log(`[stage 4] check ${check.run.runId} → ${JSON.stringify(byRule)}`);
-    if (check.runnerFailed) return { state: await rec.fail('runner-error', undefined, '검사 러너 실패'), worktree };
-    if (rec.overBudget()) return { state: await rec.budgetExceeded(), worktree };
-
+    const views = await generateViews(viewCtx);
+    const viewsUpdated = views.filter((v) => 'ok' in v && v.ok).length;
+    const queued = (await deps.store.reviewQueue.list()).filter((q) => q.runId === runId).length;
+    await rec.finishStage({ stage: 6, viewsUpdated, queued });
+    log(`[stage 6] views ${viewsUpdated}/${views.length} · 검토 대기열 ${queued}`);
     return { state: await rec.complete(), worktree };
   } catch (error) {
     const msg = (error as Error).message ?? String(error);

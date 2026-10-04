@@ -7,6 +7,8 @@ import type { RunCheckResult } from '../../checks/run-check.js';
 import type { RoleRunResult, RunRoleInput } from '../../harness/run-role.js';
 import { openStore, type Store } from '../../store/index.js';
 import type { Rule } from '../../types/index.js';
+import type { ViewGenerationResult } from '../../views/generate.js';
+import type { InjectOnceDeps, InjectOnceResult } from '../inject.js';
 import { checkPreconditions, RunPreconditionError, runPipeline } from '../pipeline.js';
 
 const RULE: Rule = {
@@ -112,6 +114,53 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
     await store.approvals.approve({ ruleId: RULE.id, proposalId: p.id, by: 'test' });
   }
 
+  /** ⑤ 가짜: 기본은 잡힘(valid). script로 라운드별 결과를 준다 */
+  function fakeInject(script: Array<{ valid: boolean; verdict?: 'weak-check' | 'undetermined' }> = [{ valid: true }]) {
+    let n = 0;
+    const calls: InjectOnceDeps[] = [];
+    const injectOnce = async (deps: InjectOnceDeps): Promise<InjectOnceResult> => {
+      calls.push(deps);
+      const step = script[Math.min(n++, script.length - 1)] ?? { valid: true };
+      const base = {
+        id: `i-000${n}` as const,
+        ruleId: deps.rule.id,
+        description: '7일 검사 제거',
+        commit: 'abc',
+        at: 't',
+        checkFileHashes: {},
+      };
+      const validity = step.valid
+        ? { ...base, result: 'check-failed' as const, valid: true as const }
+        : {
+            ...base,
+            result: 'check-passed' as const,
+            valid: false as const,
+            ...(step.verdict
+              ? {
+                  diffSearch: {
+                    runId: deps.runId ?? 'r-0000',
+                    inputs: 100,
+                    differingOutputs: step.verdict === 'weak-check' ? 3 : 0,
+                    verdict: step.verdict,
+                  },
+                }
+              : {}),
+          };
+      return { validity, role: { turns: 2, costUsd: 0.05, outcome: 'success' }, changedFiles: ['src/x.ts'] };
+    };
+    return { injectOnce, calls };
+  }
+  const fakeViews = async (): Promise<ViewGenerationResult[]> => [
+    {
+      name: 'verification',
+      ok: true,
+      generatedAt: 't',
+      sources: 1,
+      files: { json: 'a', md: 'b' },
+    } as ViewGenerationResult,
+    { name: 'flow', skipped: 'not-implemented' } as ViewGenerationResult,
+  ];
+
   const fakeCheck = async (): Promise<RunCheckResult> =>
     ({
       run: { runId: 'c-0001' },
@@ -162,11 +211,16 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
       ruleIds: [RULE.id],
       runRole,
       runCheck: fakeCheck,
+      injectOnce: fakeInject().injectOnce,
+      generateViews: fakeViews,
       inPlace: true,
       heartbeatMs: 0,
     });
     expect(state.status).toBe('completed');
-    expect(state.stages.map((s) => s.stage)).toEqual([1, 2, 3, 4]);
+    expect(state.stages.map((s) => s.stage)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(state.stages[4]?.result).toMatchObject({ stage: 5, injections: 1, caught: 1, weak: false });
+    expect(state.stages[5]?.result).toMatchObject({ stage: 6, viewsUpdated: 1, queued: 0 });
+    expect(state.roles.injector.turns).toBe(2);
     expect(state.stages[1]?.result).toMatchObject({ stage: 2, allFailed: true, tests: { total: 1, failed: 1 } });
     expect(state.stages[2]?.result).toMatchObject({ stage: 3, allPassed: true });
     expect(state.stages[3]?.result).toMatchObject({
@@ -175,7 +229,7 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
       byRule: { [RULE.id]: 'pass-unverified' },
     });
     expect(state.roles['test-writer'].turns).toBe(3);
-    expect(state.costUsd).toBeCloseTo(0.4);
+    expect(state.costUsd).toBeCloseTo(0.45);
     expect(roles).toHaveLength(2);
     expect(calls.every((c) => c[0] === RULE.checks[0]?.ref)).toBe(true);
     expect((await store.runs.get(state.id))?.status).toBe('completed');
@@ -193,6 +247,8 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
       ruleIds: [RULE.id],
       runRole: async () => okRole(),
       runCheck: fakeCheck,
+      injectOnce: fakeInject().injectOnce,
+      generateViews: fakeViews,
       inPlace: true,
       heartbeatMs: 0,
     });
@@ -218,6 +274,8 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
       ruleIds: [RULE.id],
       runRole: async () => bad('error_max_turns'),
       runCheck: fakeCheck,
+      injectOnce: fakeInject().injectOnce,
+      generateViews: fakeViews,
       inPlace: true,
       heartbeatMs: 0,
     });
@@ -230,6 +288,8 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
       ruleIds: [RULE.id],
       runRole: async () => bad('error_max_budget_usd'),
       runCheck: fakeCheck,
+      injectOnce: fakeInject().injectOnce,
+      generateViews: fakeViews,
       inPlace: true,
       heartbeatMs: 0,
     });
@@ -242,6 +302,8 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
       ruleIds: [RULE.id],
       runRole: async () => bad('isolation-leak'),
       runCheck: fakeCheck,
+      injectOnce: fakeInject().injectOnce,
+      generateViews: fakeViews,
       inPlace: true,
       heartbeatMs: 0,
     });
@@ -260,6 +322,8 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
       ruleIds: [RULE.id],
       runRole: async () => okRole(2, 0.8),
       runCheck: fakeCheck,
+      injectOnce: fakeInject().injectOnce,
+      generateViews: fakeViews,
       inPlace: true,
       heartbeatMs: 0,
     });
@@ -291,6 +355,8 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
       ruleIds: [RULE.id],
       runRole,
       runCheck: fakeCheck,
+      injectOnce: fakeInject().injectOnce,
+      generateViews: fakeViews,
       inPlace: true,
       heartbeatMs: 0,
     });
@@ -322,10 +388,88 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
       ruleIds: [RULE.id],
       runRole: async () => okRole(),
       runCheck: fakeCheck,
+      injectOnce: fakeInject().injectOnce,
+      generateViews: fakeViews,
       inPlace: true,
       heartbeatMs: 0,
       signal: ctl.signal,
     });
     expect(state.outcome).toMatchObject({ status: 'aborted', by: 'user' });
+  });
+
+  it('⑤ 검사가 약하면(weak-check) ②로 1회 되돌아가고, 두 번째도 약하면 검토 대기열에 올리고 완료한다', async () => {
+    await approveRule();
+    // 라운드마다 ②·③ 증거 2회 + 되돌림 뒤 다시 2회
+    const { adapter } = fakeAdapter(dir, [
+      [1, 0],
+      [0, 1],
+      [1, 0],
+      [0, 1],
+    ]);
+    const prompts: string[] = [];
+    const runRole = async (input: RunRoleInput): Promise<RoleRunResult> => {
+      prompts.push(input.prompt);
+      return okRole();
+    };
+    const inj = fakeInject([
+      { valid: false, verdict: 'weak-check' },
+      { valid: false, verdict: 'weak-check' },
+    ]);
+    const { state } = await runPipeline({
+      config,
+      root: dir,
+      store,
+      adapter,
+      ruleIds: [RULE.id],
+      runRole,
+      runCheck: fakeCheck,
+      injectOnce: inj.injectOnce,
+      generateViews: fakeViews,
+      inPlace: true,
+      heartbeatMs: 0,
+    });
+    expect(state.status).toBe('completed');
+    expect(state.stages.map((s) => [s.stage, s.attempt])).toEqual([
+      [1, 1],
+      [2, 1],
+      [3, 1],
+      [4, 1],
+      [5, 1],
+      [2, 2],
+      [3, 2],
+      [4, 2],
+      [5, 2],
+      [6, 1],
+    ]);
+    expect(inj.calls).toHaveLength(2);
+    expect(prompts.filter((p) => p.includes('위반 주입이 검사를 통과했다'))).toHaveLength(1); // 되돌림 ②의 프롬프트에 보강 재료
+    expect(state.stages[8]?.result).toMatchObject({ stage: 5, weak: true });
+    const queue = await store.reviewQueue.list();
+    expect(queue.some((q) => q.kind === 'undetermined-injection' && q.summary.includes('weak-check'))).toBe(true);
+    expect(state.stages[9]?.result).toMatchObject({ stage: 6, queued: 1 });
+  });
+
+  it('⑤ 미판정(undetermined)은 되돌리지 않고 ⑥으로 간다', async () => {
+    await approveRule();
+    const { adapter } = fakeAdapter(dir, [
+      [1, 0],
+      [0, 1],
+    ]);
+    const inj = fakeInject([{ valid: false, verdict: 'undetermined' }]);
+    const { state } = await runPipeline({
+      config,
+      root: dir,
+      store,
+      adapter,
+      ruleIds: [RULE.id],
+      runRole: async () => okRole(),
+      runCheck: fakeCheck,
+      injectOnce: inj.injectOnce,
+      generateViews: fakeViews,
+      inPlace: true,
+      heartbeatMs: 0,
+    });
+    expect(state.stages.map((s) => s.stage)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(state.stages[4]?.result).toMatchObject({ stage: 5, injections: 1, caught: 0, weak: false });
   });
 });
