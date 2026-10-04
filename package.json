@@ -11,6 +11,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "check": "pnpm -r build && pnpm -r lint && pnpm -r typecheck && pnpm -r test",
-    "isolation-test": "pnpm --filter @plumb/core isolation-test"
+    "isolation-test": "pnpm --filter @plumb/core isolation-test",
+    "first-slice-check": "pnpm --filter @plumb/core build && pnpm --filter @plumb/core first-slice-check"
   }
 }
