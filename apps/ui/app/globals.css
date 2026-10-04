@@ -300,3 +300,134 @@ body {
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
+
+/* /runs (work-run). 격자와 간격만 */
+.runs-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin: 0 0 1rem;
+}
+
+.runs-head h1 {
+  font-size: 1.25em;
+  margin: 0;
+}
+
+.new-run {
+  flex: 1;
+}
+
+.new-run-bar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.new-run-panel {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 1rem;
+  border: 1px solid;
+}
+
+.new-run-panel ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+}
+
+.new-run-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.runs-body {
+  display: grid;
+  grid-template-columns: 20rem 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.runs-list {
+  border-right: 1px solid;
+  padding-right: 1rem;
+}
+
+.runs-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.runs-table th,
+.runs-table td {
+  text-align: left;
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid;
+  white-space: nowrap;
+}
+
+.run-detail h2,
+.run-detail h3 {
+  font-size: 1em;
+  margin: 0 0 0.25rem;
+}
+
+.run-detail-head p {
+  margin: 0.25rem 0;
+}
+
+.run-stale {
+  font-weight: bold;
+}
+
+.stage-track,
+.role-table {
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+}
+
+.stage-track th,
+.stage-track td,
+.role-table th,
+.role-table td {
+  text-align: left;
+  padding: 0.125rem 0.5rem;
+  white-space: nowrap;
+}
+
+.stage-track .stage-mark {
+  min-width: 4rem;
+}
+
+.output-tail pre {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px solid;
+  overflow-x: auto;
+}
+
+.run-detail-foot {
+  display: flex;
+  gap: 1.5rem;
+  align-items: baseline;
+  margin: 1rem 0 0;
+  padding: 0.5rem 0 0;
+  border-top: 1px solid;
+}
+
+.run-detail-foot span:first-child {
+  flex: 1;
+}
+
+.run-abort {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+/* 선택된 실행 행. 뒤에 두는 것은 특이도 순서(biome noDescendingSpecificity) */
+.runs-table tr[aria-current="true"] td {
+  font-weight: bold;
+}
