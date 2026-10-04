@@ -2,6 +2,7 @@
  * `runCheck()` (이슈 #47) — 어댑터를 가짜로 바꿔 JUnit 픽스처 · 정적 결과 · 블록 그래프를 주입한다.
  * 정상 경로: `checks/c-*.json` · `rule-status/*.json`이 생기고 `status().lastCheck`가 채워진다.
  * 러너 실패(`junitPath: null`): 이전 rule-status가 보존되고 `runner.exitCode` · `stderrTail`만 기록된다.
+ * 유효성(#105): `injections/<ruleId>/`의 최신 기록으로 전부 통과한 규칙을 🟢 · 🟡 · 🟠으로 가른다.
  */
 
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -10,8 +11,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { NotImplementedError } from '../../adapter/errors.js';
 import type { Adapter, BlockGraph, StaticCheckRun, TestRunResult } from '../../adapter/types.js';
+import { sha256 } from '../../store/fs.js';
 import { openStore, type Store } from '../../store/index.js';
-import type { CapturedOutput, CheckResult, PlumbConfig, Proposal, Rule } from '../../types/index.js';
+import type { CapturedOutput, CheckResult, PlumbConfig, Proposal, Rule, Validity } from '../../types/index.js';
 import {
   checkRunIdAt,
   describeStatusDetail,
@@ -202,14 +204,44 @@ async function approveRules(rules: Rule[]): Promise<void> {
   }
 }
 
+const CHECK_FILE_TEXT = '// acceptance test\n';
+
 async function touchCheckFiles(rules: Rule[]): Promise<void> {
   for (const rule of rules) {
     for (const check of rule.checks) {
       if (check.kind === 'static') continue;
       await mkdir(join(dir, check.ref, '..'), { recursive: true });
-      await writeFile(join(dir, check.ref), '// acceptance test\n');
+      await writeFile(join(dir, check.ref), CHECK_FILE_TEXT);
     }
   }
+}
+
+/** 주입 기록 1건 — 기본은 지금 검사 파일 내용의 해시 (= 주입 뒤 파일이 안 바뀜) */
+function injectionFor(
+  rule: Rule,
+  valid: boolean,
+  overrides: Partial<Pick<Validity, 'id' | 'at' | 'checkFileHashes'>> = {},
+): Validity {
+  const base = {
+    id: 'i-0001' as const,
+    ruleId: rule.id,
+    description: '7일 검사 제거',
+    anchor: { file: 'src/domains/payment/payment.ts', line: 30, block: 'payment' },
+    commit: 'abc1234',
+    at: '2026-10-02T08:00:00.000Z',
+    checkFileHashes: Object.fromEntries(
+      rule.checks.filter((c) => c.kind !== 'static').map((c) => [c.ref, sha256(CHECK_FILE_TEXT)]),
+    ),
+    ...overrides,
+  };
+  return valid
+    ? { ...base, result: 'check-failed', valid: true }
+    : {
+        ...base,
+        result: 'check-passed',
+        valid: false,
+        diffSearch: { runId: 'r-0001', inputs: 100, differingOutputs: 3, verdict: 'weak-check' },
+      };
 }
 
 beforeEach(async () => {
@@ -329,6 +361,88 @@ describe('runCheck — 정상 경로', () => {
     const third = await runCheck(deps(adapter));
     expect(third.storeStatus.status).toBe('tampered');
     expect(third.run.storeStatus).toBe('tampered');
+  });
+});
+
+describe('runCheck — 유효성 (#105, 기획안 §7.3 · §7.4)', () => {
+  const passing = () => fakeAdapter({ runTests: () => junitRun(PASSING_JUNIT_XML, 0) });
+
+  it('통과 + 잡힌 주입(valid: true) → 🟢 pass-verified/passed-and-injection-valid, validity는 기록 그대로. 기록 없는 규칙은 🟡 no-injection', async () => {
+    await approveRules([REFUND_RULE, RECORD_RULE]);
+    await touchCheckFiles([REFUND_RULE, RECORD_RULE]);
+    const caught = await store.injections.write(injectionFor(REFUND_RULE, true));
+
+    const result = await runCheck(deps(passing()));
+
+    const refund = await store.ruleStatus.get(REFUND_RULE.id);
+    expect(refund?.detail).toEqual({ status: 'pass-verified', reason: 'passed-and-injection-valid', validity: caught });
+    expect(refund?.history).toEqual(['pass-verified']);
+    expect(describeStatusDetail(refund?.detail ?? { status: 'unchecked', reason: 'not-run' })).toBe(
+      '유효 ✔ (주입으로 확인)',
+    );
+    expect((await store.ruleStatus.get(RECORD_RULE.id))?.detail).toEqual({
+      status: 'pass-unverified',
+      reason: 'no-injection',
+    });
+    expect(result.statuses.map((s) => s.detail.status)).toEqual(['pass-verified', 'pass-unverified']);
+  });
+
+  it('통과 + 못 잡은 주입(valid: false) → 🟡 pass-unverified/injection-invalid, 차이 탐색 결과 포함', async () => {
+    await approveRules([REFUND_RULE]);
+    await touchCheckFiles([REFUND_RULE]);
+    const missed = await store.injections.write(injectionFor(REFUND_RULE, false));
+
+    await runCheck(deps(passing()));
+
+    const detail = (await store.ruleStatus.get(REFUND_RULE.id))?.detail;
+    expect(detail).toEqual({ status: 'pass-unverified', reason: 'injection-invalid', validity: missed });
+    expect(detail?.status === 'pass-unverified' ? detail.validity?.diffSearch?.verdict : undefined).toBe('weak-check');
+    expect(describeStatusDetail(detail ?? { status: 'unchecked', reason: 'not-run' })).toBe(
+      '유효성 무효 ✘ (주입이 검사를 통과)',
+    );
+  });
+
+  it('주입 뒤 검사 파일이 바뀌면(sha256 불일치) 🟠 recheck/check-file-changed + changedFiles — 잡힌 기록이어도', async () => {
+    await approveRules([REFUND_RULE]);
+    await touchCheckFiles([REFUND_RULE]);
+    await store.injections.write(injectionFor(REFUND_RULE, true));
+    const ref = REFUND_RULE.checks[0]?.ref ?? '';
+    await writeFile(join(dir, ref), `${CHECK_FILE_TEXT}// 7일 → 30일\n`);
+
+    await runCheck(deps(passing()));
+
+    expect((await store.ruleStatus.get(REFUND_RULE.id))?.detail).toEqual({
+      status: 'recheck',
+      reason: 'check-file-changed',
+      changedFiles: [ref],
+    });
+  });
+
+  it('규칙별 최신 1건만 본다 — 잡힌 기록 뒤에 못 잡은 기록이 오면 🟡 injection-invalid', async () => {
+    await approveRules([REFUND_RULE]);
+    await touchCheckFiles([REFUND_RULE]);
+    await store.injections.write(injectionFor(REFUND_RULE, true));
+    const later = await store.injections.write(
+      injectionFor(REFUND_RULE, false, { id: 'i-0002', at: '2026-10-02T08:30:00.000Z' }),
+    );
+
+    await runCheck(deps(passing()));
+
+    expect((await store.ruleStatus.get(REFUND_RULE.id))?.detail).toEqual({
+      status: 'pass-unverified',
+      reason: 'injection-invalid',
+      validity: later,
+    });
+  });
+
+  it('검사가 실패하면 잡힌 주입이 있어도 🔴 — 주입은 통과한 규칙에만 영향을 준다', async () => {
+    await approveRules([REFUND_RULE]);
+    await touchCheckFiles([REFUND_RULE]);
+    await store.injections.write(injectionFor(REFUND_RULE, true));
+
+    await runCheck(deps(fakeAdapter({ runTests: () => junitRun(JUNIT_XML, 1) })));
+
+    expect((await store.ruleStatus.get(REFUND_RULE.id))?.detail.status).toBe('fail');
   });
 });
 

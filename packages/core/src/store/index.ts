@@ -21,6 +21,7 @@ import type {
   RunId,
   RunState,
   RunSummary,
+  Validity,
   View,
   ViewName,
 } from '../types/index.js';
@@ -44,6 +45,7 @@ import {
 } from './code-opens.js';
 import { type ApproveContractInput, approveContract, getContractApproval, listContractApprovals } from './contracts.js';
 import { initStore, type StoreMeta } from './init.js';
+import { latestInjection, listInjections, writeInjection } from './injections.js';
 import { type StorePaths, storePaths } from './paths.js';
 import { getProposal, listProposals, writeProposal } from './proposals.js';
 import { type EnqueueInput, enqueueReviewItem, listReviewQueue, nextReviewQueueId } from './review-queue.js';
@@ -194,6 +196,17 @@ export interface Store {
     list(openOnly?: boolean): Promise<ReviewQueueItem[]>;
     nextId(): Promise<ReviewQueueItemId>;
   };
+  /**
+   * 위반 주입 기록 `injections/<ruleId>/<i-id>.json` (기획안 §7.4, #90) — 실행: injector가 쓰고 `plumb check`(#105)가 규칙별
+   * 최신 1건을 읽어 🟢 · 🟡 · 🟠을 가른다. 패치 본문은 없다 — 설명 한 줄과 결과뿐
+   */
+  injections: {
+    write(validity: Validity | unknown): Promise<Validity>;
+    /** 시각순 (오래된 것부터) */
+    list(ruleId: RuleId): Promise<Validity[]>;
+    /** 가장 최근 기록. 없으면 `undefined` */
+    latest(ruleId: RuleId): Promise<Validity | undefined>;
+  };
   status(): Promise<StoreStatus>;
 }
 
@@ -257,6 +270,11 @@ export function openStore(config: StoreConfig, root: string, options: StoreOptio
       enqueue: (input) => enqueueReviewItem(paths, input, options.now),
       list: (openOnly) => listReviewQueue(paths, openOnly),
       nextId: () => nextReviewQueueId(paths),
+    },
+    injections: {
+      write: (validity) => writeInjection(paths, validity),
+      list: (ruleId) => listInjections(paths, ruleId),
+      latest: (ruleId) => latestInjection(paths, ruleId),
     },
     status: () => storeStatus(paths, timing),
   };
