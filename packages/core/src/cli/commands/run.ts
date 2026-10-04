@@ -20,6 +20,7 @@ import {
   type PipelineResult,
   RunPreconditionError,
 } from '../../run/pipeline.js';
+import { newRunState } from '../../run/state.js';
 import type { RuleId, RunId, RunState, RunSummary } from '../../types/index.js';
 import {
   type CliContext,
@@ -189,6 +190,11 @@ export async function runCommandBody(
       args: [...target, 'run', '--rules', ...ruleIds, '--child', runId],
       cwd,
     });
+    // 자식이 첫 상태를 쓰기 전의 틈(수백 ms)에 `runs show` · `GET /api/runs/:id`가 404를 받지 않도록 부모가 초기 상태를 먼저 쓴다.
+    // 자식은 같은 id · 같은 pid로 덮어쓴다. 동시 1개 검사(`runs.active`)도 이 순간부터 유효하다
+    await opened.store.runs.write(
+      newRunState({ id: runId, ruleIds, config: opened.config, pid, ...(ctx.now ? { now: ctx.now } : {}) }),
+    );
     if (options.json) writeJson(ctx, { id: runId, pid, log: childLogPath(opened, runId) });
     else ctx.stdout.write(`${JSON.stringify({ id: runId, pid })}\n`);
     return EXIT_OK;
