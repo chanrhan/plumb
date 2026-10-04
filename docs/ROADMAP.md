@@ -21,7 +21,7 @@
 | M5 | 완료 | `plumb check`: Vitest JUnit + depcruise → 규칙별 상태 + 검사 범위 밖 → `checks/`·`rule-status/`. CLI 표와 UI `/rules` 상태 열 연결 |
 | M6 | 완료 | #86~#89 + #94 머지. 로컬 r-0001: `plumb run --detach` → ①②③④ 완주(103초 · $0.29), 이의 제기 → 재검토 `test-wrong`(alias 원인 → #99). UI `/runs` #107 |
 | M7 | 코드 완료 · 종료 증거 대기 | #90 injector · #91 차이 탐색 머지, 격리 시험 12/12. "주입이 검사 실패로 잡히고 유효성 기록"은 M9 #103 로컬 실행에서 확인 → 그때 닫는다 |
-| M9 | 이슈 등록 #102~#105 | #102 ⑤⑥ 연결 머지 → #103 통과 기준 스크립트(`env/local`) · #104 대조표(`parallel/ok`) · #105 🟢 판정(`parallel/ok`) |
+| M9 | wave 0·1 머지 · #103 로컬 증거 대기 | #102 ⑤⑥ 연결 · #104 대조표(`docs/screens/compare.md`, M10 후보 27개) · #105 🟢 판정 · 후속 #111 View 유효성 열 머지. #103 통과 기준 스크립트는 PR #109 — 로컬 `pnpm first-slice-check` 출력으로 닫는다 |
 | M8 | #63 · #67만 남음 | View 6개 생성기 + `plumb views` + UI `/views`(Markdown·Mermaid, `plumb://open` 점프) 완료. testbed에서 `plumb check --views` → 12 파일. 흐름도는 spike 결과 A안(트레이스 + 정적) — 결정 #67 사람 확인 대기. #63 타입 보완 진행 중 |
 
 ## 마일스톤
@@ -149,15 +149,16 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 | wave | 이슈 | 내용 |
 |---|---|---|
 | 0 | #102 | 단계 ⑤⑥ 파이프라인 연결: 규칙별 `injectOnce`(하네스가 worktree 커밋 → 그 HEAD에서 주입) → 약하면 ②로 1회 → View 갱신 · `stages 5·6` — **머지** |
-| 1 | #105 | 🟢 판정: `computeRuleStatuses`가 `injections/` `Validity`를 읽어 `pass-verified` · `injection-invalid` · 검사 파일 해시 변경 → `recheck`. ⑤ 뒤 재검사 |
-| 1 | #104 | 와이어프레임 ↔ 실제 화면 대조표 `docs/screens/compare.md` → M10 후보 |
-| 2 | #103 | `pnpm first-slice-check`(§15.1 ①②③⑤ 자동 판정) + `docs/first-slice.md` 수동 체크리스트(④ 화면만으로 승인→실행→View) |
+| 1 | #105 | 🟢 판정: `computeRuleStatuses`가 `injections/` `Validity`를 읽어 `pass-verified` · `injection-invalid` · 검사 파일 해시 변경 → `recheck`. ⑤ 뒤 재검사 — **머지** |
+| 1 | #111 | (#105에서 발견) 검증 View `buildRow`가 `RuleRow.validity`를 채움 → 사유 칸에 "주입 … → ✔ 유효 / ✘ 무효" 줄 — **머지** |
+| 1 | #104 | 와이어프레임 ↔ 실제 화면 대조표 `docs/screens/compare.md`(282행: 있음 205 · 다름 41 · 없음 36) → 13절 M10 후보 27개 — **머지** |
+| 2 | #103 | `pnpm first-slice-check`(§15.1 ①②③⑤ 자동 판정) + `docs/first-slice.md` 수동 체크리스트(④ 화면만으로 승인→실행→View) — PR #109, 로컬 출력 대기 |
 
 §15.1 통과 기준 다섯 항목: ① 규칙 승인을 빼면 사람 개입 없이 끝까지 돈다 ② 격리가 실제로 동작한다(test-writer는 `src/` 못 읽고, implementer는 인수 테스트 못 고침) ③ 종료 조건이 실제로 막는다 ④ 개발자는 명령어 없이 화면에서 규칙 승인 → 실행 → View 확인 ⑤ 에이전트는 승인할 수 없다.
 
 ### M10 넓히기
 
-기획안 §15.2. 이슈는 M9 결과를 보고 등록한다. 슬라이스 반복 → `plumb init` 연동 일반화 → 해시 체인 · 승인 모델 · 병합 게이트 → 작업 화면(추적성 매트릭스 등) → 데스크톱 포장.
+기획안 §15.2. 이슈는 M9 결과를 보고 등록한다 — 후보 목록은 `docs/screens/compare.md` 13절(M10-01~27; M10-18의 유효성 열 채우기는 #111로 먼저 처리됨, 나머지 anchor · 차이 탐색 링크 · PBT 샘플만 남는다). 슬라이스 반복 → `plumb init` 연동 일반화 → 해시 체인 · 승인 모델 · 병합 게이트 → 작업 화면(추적성 매트릭스 등) → 데스크톱 포장.
 
 ## 이슈 등록 시점
 

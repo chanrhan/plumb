@@ -188,6 +188,11 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
     await expect(checkPreconditions({ config, store, ruleIds: [RULE.id] })).rejects.toBeInstanceOf(
       RunPreconditionError,
     );
+    // 같은 id면 `--detach` 부모의 선기록 = 자기 자신 — 통과 (#115). 다른 id는 여전히 막힌다
+    expect(await checkPreconditions({ config, store, ruleIds: [RULE.id], runId: 'r-0001' })).toHaveLength(1);
+    await expect(checkPreconditions({ config, store, ruleIds: [RULE.id], runId: 'r-0002' })).rejects.toMatchObject({
+      code: 'run-in-progress',
+    });
     void adapter;
   });
 
