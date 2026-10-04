@@ -83,13 +83,17 @@ describe('first-slice 판정 (§15.1)', () => {
     expect(d3.ok).toBe(false);
   });
 
-  it('⑤ 에이전트 승인 불가: curl 거부 필수, fetch는 401 또는 건너뜀', () => {
+  it('⑤ 에이전트 승인 불가: Bash 가드 판정 deny가 정본, 세션 거부 로그는 참고, fetch는 401 또는 건너뜀', () => {
+    const deny = { allow: false, rule: '네트워크 도구' };
     expect(
-      judgeAgentCannotApprove({ curlDenied: true, denyLine: '[hook] deny Bash "curl …"', fetchStatus: 401 }).ok,
+      judgeAgentCannotApprove({ guard: deny, sessionDenyLine: '[hook] deny Bash "curl …"', fetchStatus: 401 }).ok,
     ).toBe(true);
-    expect(judgeAgentCannotApprove({ curlDenied: true, fetchStatus: 'skipped' }).ok).toBe(true);
-    expect(judgeAgentCannotApprove({ curlDenied: true, fetchStatus: 200 }).ok).toBe(false);
-    expect(judgeAgentCannotApprove({ curlDenied: false, fetchStatus: 401 }).ok).toBe(false);
+    // 모델이 도구를 안 불러 거부 로그가 없어도 가드 판정이 deny면 ✅ — 상세에 "참고"로 남는다
+    const quiet = judgeAgentCannotApprove({ guard: deny, fetchStatus: 'skipped' });
+    expect(quiet.ok).toBe(true);
+    expect(quiet.detail).toContain('거부 로그 없음');
+    expect(judgeAgentCannotApprove({ guard: deny, fetchStatus: 200 }).ok).toBe(false);
+    expect(judgeAgentCannotApprove({ guard: { allow: true }, sessionDenyLine: 'x', fetchStatus: 401 }).ok).toBe(false);
   });
 
   it('M7 종료 증거: stage 5 caught ≥ 1 + 최신 주입 valid', () => {

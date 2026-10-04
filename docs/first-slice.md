@@ -18,7 +18,7 @@ plumb rule propose --file examples/testbed/plumb/proposals/pay.refund-window.jso
 | ① | 규칙 승인을 빼면 사람 개입 없이 끝까지 돈다 | 마지막 `runs/<id>.json`이 `completed`이고 단계 1~6 전부 `finishedAt` |
 | ② | 격리가 실제로 동작한다 | `isolation-test` 전부 ✅ (test-writer `src/**` 읽기 거부 · implementer `test/acceptance/**` 쓰기 거부 포함) |
 | ③ | 종료 조건이 실제로 막는다 | `isolation-test` 항목 8: 틀린 구현 → Stop block → 상한 |
-| ⑤ | 에이전트는 승인할 수 없다 | implementer 세션에 `curl POST /api/rules/<id>/approve`를 시키면 **Bash 가드가 거부**(네트워크 도구) · 쿠키 없는 `fetch`는 **401**(UI 서버가 떠 있을 때; 없으면 건너뜀) |
+| ⑤ | 에이전트는 승인할 수 없다 | `curl POST /api/rules/<id>/approve`를 implementer의 **Bash 가드 규칙에 직접 넣어 deny**(정본, 네트워크 도구) · 같은 명령을 implementer 세션에 시킨 결과의 거부 로그(참고 — 모델이 도구를 안 부르면 로그가 없다) · 쿠키 없는 `fetch`는 **401**(UI 서버가 떠 있을 때; 없으면 건너뜀) |
 | M7 | (M7 종료 증거) 주입이 잡히고 유효성 기록 | 마지막 실행 stage 5 `caught ≥ 1` · `injections/<rule>/` 최신 `valid: true` |
 
 순서: `plumb run --rules pay.refund-window --detach` → `plumb runs show r-000n`이 `완료 · 단계 6`이 될 때까지 → `pnpm first-slice-check`.
