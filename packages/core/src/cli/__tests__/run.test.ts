@@ -80,7 +80,10 @@ interface Harness {
   run(args: string[]): Promise<void>;
 }
 
-function harness(pipeline?: (deps: PipelineDeps) => Promise<PipelineResult>): Harness {
+function harness(
+  pipeline?: (deps: PipelineDeps) => Promise<PipelineResult>,
+  opts: { kill?: (pid: number, signal: NodeJS.Signals) => void } = {},
+): Harness {
   const h: Harness = { out: [], err: [], exits: [], spawns: [], kills: [], pipelineCalls: [], run: async () => {} };
   const program = createProgram({
     stdout: {
@@ -117,7 +120,7 @@ function harness(pipeline?: (deps: PipelineDeps) => Promise<PipelineResult>): Ha
       h.spawns.push(input);
       return 4242;
     },
-    kill: (pid, signal) => void h.kills.push([pid, signal]),
+    kill: opts.kill ?? ((pid, signal) => void h.kills.push([pid, signal])),
     self: { execPath: '/usr/bin/node', entry: '/plumb/dist/cli/index.js', pid: 1 },
   });
   program.exitOverride();
@@ -220,6 +223,51 @@ describe('plumb run — 실행', () => {
     const log = await readFile(join(dir, '.plumb-store', 'runs', 'r-0007', 'run.log'), 'utf8');
     expect(log).toMatch(/\[run\] r-0007 completed/);
   });
+
+  it('--child <id>: 부모가 선기록한 같은 id의 running은 자기 자신 — 전제조건을 통과해 완주한다 (#115)', async () => {
+    await approve();
+    const store = openStore(CONFIG, dir);
+    await store.init();
+    // 부모(--detach)가 자식을 띄우기 전에 쓰는 초기 상태
+    await store.runs.write(newRunState({ id: 'r-0003', ruleIds: [RULE.id], config: CONFIG as never, pid: 4242, now }));
+    const { checkPreconditions } = await import('../../run/pipeline.js');
+    const h = harness(async (deps) => {
+      await checkPreconditions(deps); // 실제 전제조건 — 선기록을 다른 실행으로 보면 여기서 run-in-progress
+      const done: RunState = {
+        ...newRunState({ id: deps.runId ?? 'r-0003', ruleIds: deps.ruleIds, config: deps.config, now }),
+        status: 'completed',
+        stage: 6,
+        finishedAt: now().toISOString(),
+        outcome: { status: 'completed', finishedAt: clock.toISOString() },
+      };
+      await deps.store.runs.write(done);
+      return { state: done };
+    });
+    await h.run(['run', '--rules', RULE.id, '--child', 'r-0003']);
+    expect(h.exits).toEqual([]);
+    expect((await store.runs.get('r-0003'))?.status).toBe('completed');
+  });
+
+  it('--child <id>: 시작 실패면 선기록 running을 failed/spawn-error로 닫고 검토 대기열에 올린다 (#115)', async () => {
+    await approve();
+    const store = openStore(CONFIG, dir);
+    await store.init();
+    await store.runs.write(newRunState({ id: 'r-0004', ruleIds: [RULE.id], config: CONFIG as never, pid: 4242, now }));
+    const h = harness(async () => {
+      throw new Error('어댑터를 못 찾았다');
+    });
+    await h.run(['run', '--rules', RULE.id, '--child', 'r-0004']).catch(() => undefined);
+    expect(h.out).toEqual([]);
+    const state = await store.runs.get('r-0004');
+    expect(state?.status).toBe('failed');
+    expect(state?.outcome).toMatchObject({ status: 'failed', reason: 'spawn-error' });
+    const queue = await store.reviewQueue.list();
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({ kind: 'run-failed', runId: 'r-0004' });
+    const { readFile } = await import('node:fs/promises');
+    const log = await readFile(join(dir, '.plumb-store', 'runs', 'r-0004', 'run.log'), 'utf8');
+    expect(log).toMatch(/시작 실패: 어댑터를 못 찾았다/);
+  });
 });
 
 describe('plumb runs', () => {
@@ -282,6 +330,28 @@ describe('plumb runs', () => {
     await h2.run(['runs', 'show', 'r-0009']);
     expect(h2.exits).toEqual([2]);
     expect(h2.err.join('')).toMatch(/run-not-found/);
+  });
+
+  it('abort: pid가 이미 없으면(ESRCH) 상태를 aborted로 직접 닫는다 (#115 유령 running)', async () => {
+    const store = openStore(CONFIG, dir);
+    await store.init();
+    await store.runs.write(newRunState({ id: 'r-0001', ruleIds: [RULE.id], config: CONFIG as never, pid: 9574, now }));
+    const h = harness(undefined, {
+      kill: () => {
+        throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
+      },
+    });
+    await h.run(['runs', 'abort', 'r-0001', '--json']);
+    expect(h.exits).toEqual([]);
+    expect(JSON.parse(h.out.join(''))).toEqual({
+      id: 'r-0001',
+      requested: false,
+      processGone: true,
+      status: 'aborted',
+    });
+    const state = await store.runs.get('r-0001');
+    expect(state?.status).toBe('aborted');
+    expect(state?.outcome).toMatchObject({ status: 'aborted', by: 'user' });
   });
 
   it('abort: 진행 중이면 pid에 SIGTERM, 끝났으면 exit 3 (run-finished), 없으면 exit 2', async () => {

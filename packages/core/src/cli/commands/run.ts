@@ -86,6 +86,39 @@ export function childLogPath(opened: OpenedStore, runId: RunId): string {
   return join(opened.store.paths.runsDir, runId, 'run.log');
 }
 
+/**
+ * 자식이 파이프라인을 시작하지 못했을 때(어댑터 로드 · 전제조건 등) 부모가 선기록한 `running`을 `failed/spawn-error`로 닫는다 —
+ * 그대로 두면 유령 running이 남아 다음 `plumb run`이 전부 run-in-progress로 막힌다(#115). 이미 끝난 상태면 건드리지 않는다
+ */
+async function markSpawnFailed(
+  opened: OpenedStore,
+  runId: RunId,
+  message: string,
+  now: (() => Date) | undefined,
+): Promise<void> {
+  try {
+    const state = await opened.store.runs.get(runId);
+    if (state?.status !== 'running') return;
+    const finishedAt = (now ?? (() => new Date()))().toISOString();
+    const item = await opened.store.reviewQueue.enqueue({
+      kind: 'run-failed',
+      ruleIds: state.ruleIds,
+      runId,
+      summary: `실행 시작 실패: ${message}`,
+    });
+    await opened.store.runs.write({
+      ...state,
+      status: 'failed',
+      currentRole: null,
+      finishedAt,
+      updatedAt: finishedAt,
+      outcome: { status: 'failed', finishedAt, reason: 'spawn-error', queueItemId: item.id },
+    });
+  } catch {
+    // 상태 기록 실패는 원래 오류를 가리지 않는다
+  }
+}
+
 async function runInline(
   ctx: RunCliContext,
   opened: OpenedStore,
@@ -160,7 +193,9 @@ export async function runCommandBody(
       log(`[run] ${state.id} ${state.status}`);
       return outcomeExitCode(state);
     } catch (error) {
-      log(`[run] 시작 실패: ${(error as Error).message ?? String(error)}`);
+      const message = (error as Error).message ?? String(error);
+      log(`[run] 시작 실패: ${message}`);
+      await markSpawnFailed(opened, runId, message, ctx.now);
       throw error;
     } finally {
       await fh.close();
@@ -283,7 +318,24 @@ export async function runsAbortBody(
     ctx.stderr.write(`plumb runs abort: ${runId}은 이미 끝났다 — ${STATUS_LABEL[state.status]} (run-finished)\n`);
     return EXIT_RUN_CONFLICT;
   }
-  (ctx.kill ?? ((pid, signal) => process.kill(pid, signal)))(state.pid, 'SIGTERM');
+  try {
+    (ctx.kill ?? ((pid, signal) => process.kill(pid, signal)))(state.pid, 'SIGTERM');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    // 프로세스가 이미 없다(자식이 상태를 못 쓰고 죽은 유령 running, #115) — 보낼 신호가 없으니 상태만 aborted로 닫는다
+    const finishedAt = (ctx.now ?? (() => new Date()))().toISOString();
+    await opened.store.runs.write({
+      ...state,
+      status: 'aborted',
+      currentRole: null,
+      finishedAt,
+      updatedAt: finishedAt,
+      outcome: { status: 'aborted', finishedAt, by: 'user', signal: 'SIGTERM' },
+    });
+    if (json) writeJson(ctx, { id: runId, requested: false, processGone: true, status: 'aborted' });
+    else ctx.stdout.write(`프로세스 없음 (pid ${state.pid}) — ${runId} 상태를 aborted로 닫았다\n`);
+    return EXIT_OK;
+  }
   if (json) writeJson(ctx, { id: runId, requested: true, signal: 'SIGTERM' });
   else ctx.stdout.write(`중단 요청: ${runId} (pid ${state.pid}, SIGTERM) — 상태는 plumb runs show ${runId} 로 확인\n`);
   return EXIT_OK;
