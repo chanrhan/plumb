@@ -56,6 +56,8 @@ root로 실행하면 PostgreSQL의 `initdb`·`postgres`가 거부하므로, 스�
 
 ## 확인 명령
 
+테스트(`src/**/*.test.ts` · `test/**/*.spec.ts`)에서 tsconfig의 `@/` 별칭(`@/domains/payment` 등)을 쓸 수 있다 — `vitest.config.ts`의 `resolve.alias`가 tsconfig `paths`와 같은 `src/`를 가리킨다(#99).
+
 ```
 pnpm --filter @plumb/testbed typecheck
 pnpm --filter @plumb/testbed exec prisma validate
