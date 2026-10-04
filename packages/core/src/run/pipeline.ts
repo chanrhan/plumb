@@ -4,7 +4,7 @@
  *   ① 승인 확인      — 규칙마다 승인 기록(`action: 'approve'`)이 있어야 시작. 없으면 {@link RunPreconditionError}
  *   ② test-writer    — worktree에서 `.d.ts` 스텁 → 역할 실행(Stop `all-fail`) → 증거: 담당 파일이 있고 전부 실패 → ✔. 아니면 `stage-2-not-all-failed`
  *   ③ implementer    — 역할 실행(Stop `all-pass-or-dispute`) → 전부 통과 ✔ 또는 유효한 이의 제기 → `disputes[]`(재검토는 #88)
- *   ④ plumb check    — `runCheck()`를 worktree에 대고 돌려 규칙별 상태를 저장소에 기록
+ *   ④ plumb check    — `runCheck()`를 worktree에 대고 돌려 규칙별 상태를 저장소에 기록. ⑤ 뒤 한 번 더 돌려 주입 결과(🟢 · 🟡)를 반영(#105)
  * 예산(`run.maxBudgetUsd`)은 단계마다 본다. 역할의 `maxTurns` 초과(SDK `error_max_turns`) → `failed: maxTurns`.
  * 격리 누수(`isolation-leak`)와 러너 실패 → `failed: runner-error`. 연속 Stop 차단 상한 → `failed: stopBlockLimit`.
  *
@@ -424,6 +424,21 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
           runId,
           summary: `검사 약함(weak-check)이 ${maxRewinds}회 보강 뒤에도 남음: ${weakExamples.join(' · ')}`,
         });
+      }
+      // ⑤ 뒤 ④ 재검사 (#105) — ④는 주입 전에 돌았으므로 그 상태 파일은 🟡(주입 기록 없음)이다. 주입 기록이 생겼으니 한 번 더
+      // 돌려 🟢 `pass-verified` · 🟡 `injection-invalid`가 `rule-status/`에 반영되게 한다. 단계 기록은 ④ 그대로, 결과는 로그 한 줄
+      if (injections > 0) {
+        const recheck = await runCheckFn({
+          config: deps.config,
+          root: worktree ? worktree.serviceRoot : deps.root,
+          store: deps.store,
+          adapter: deps.adapter,
+          now,
+        });
+        const afterInjection = Object.fromEntries(
+          recheck.statuses.filter((s) => deps.ruleIds.includes(s.ruleId)).map((s) => [s.ruleId, s.detail.status]),
+        ) as Record<RuleId, RuleStatus>;
+        log(`[stage 5] 재검사 ${recheck.run.runId} → ${JSON.stringify(afterInjection)}`);
       }
       break;
     }

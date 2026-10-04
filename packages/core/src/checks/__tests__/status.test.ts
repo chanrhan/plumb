@@ -8,15 +8,18 @@ import type {
   RuleStatus,
   RuleStatusDetail,
   RuleStatusRecord,
+  Validity,
 } from '../../types/index.js';
 import {
   approvalStatesFrom,
+  changedCheckFiles,
   computeRuleStatusDetail,
   computeRuleStatuses,
   failDetail,
   HISTORY_LIMIT,
   missingCheckFiles,
   NO_FAILURE_DETAIL_MESSAGE,
+  passDetail,
   resultsForRule,
 } from '../status.js';
 import { COMMIT, EARLIER, NOW, RECORD_CHECK, REFUND_CHECK, record, result, rule, STATIC_CHECK } from './fixtures.js';
@@ -37,7 +40,37 @@ function scenario(checks: ChecksCase, file: FileCase, outcome: ResultCase) {
   const results: CheckResult[] =
     outcome === 'none' ? [] : [result(REFUND_CHECK, outcome === 'fail' ? 'fail' : 'pass', { ruleIds: [RULE_ID] })];
   const quarantined: Quarantine[] = outcome === 'quarantined' ? [{ ref: REFUND_CHECK.ref, passes: 2, runs: 3 }] : [];
-  return { rule: r, results, quarantined, fileExists: () => file === 'file' };
+  return { rule: r, results, quarantined, fileExists: () => file === 'file', ...NO_INJECTION };
+}
+
+/** 주입 기록 없음 — 검사 파일 해시도 볼 일이 없다 */
+const NO_INJECTION = { validity: new Map<RuleId, Validity>(), fileHash: () => undefined };
+
+/** 주입 시점의 검사 파일 해시 (현재 해시와 같다고 두는 값) */
+const HASH_AT_INJECTION = 'sha256-at-injection';
+
+/** 주입 기록 1건. `valid`가 true면 잡힘 ✔(check-failed), false면 통과해 버림 ✘(check-passed + 차이 탐색) */
+function injection(
+  valid: boolean,
+  hashes: Record<string, string> = { [REFUND_CHECK.ref]: HASH_AT_INJECTION },
+): Validity {
+  const base = {
+    id: 'i-0001' as const,
+    ruleId: RULE_ID,
+    description: '7일 검사 제거',
+    anchor: { file: 'src/domains/payment/payment.ts', line: 30, block: 'payment' },
+    commit: 'abc1234',
+    at: EARLIER,
+    checkFileHashes: hashes,
+  };
+  return valid
+    ? { ...base, result: 'check-failed', valid: true }
+    : {
+        ...base,
+        result: 'check-passed',
+        valid: false,
+        diffSearch: { runId: 'r-0001', inputs: 100, differingOutputs: 3, verdict: 'weak-check' },
+      };
 }
 
 describe('computeRuleStatusDetail — 상태 전이 표 (승인 × checks 유무 × 파일 존재 × 결과)', () => {
@@ -141,9 +174,116 @@ describe('computeRuleStatusDetail — 상태 전이 표 (승인 × checks 유무
   );
 });
 
+describe('computeRuleStatusDetail — 유효성 판정표 (#105, 기획안 §7.3 · §7.4)', () => {
+  // 전부 통과한 규칙만 주입 기록을 본다: 기록 없음 → 🟡 no-injection · 잡힘 → 🟢 · 못 잡음 → 🟡 injection-invalid ·
+  // 기록 뒤 검사 파일 해시가 바뀜 → 🟠 recheck (잡혔든 못 잡았든 — 그 기록은 더 이상 근거가 아니다)
+  type InjectionCase = 'none' | 'valid' | 'invalid';
+  type HashCase = 'same' | 'changed' | 'unreadable';
+  it.each`
+    injection    | hash            | status               | reason
+    ${'none'}    | ${'same'}       | ${'pass-unverified'} | ${'no-injection'}
+    ${'none'}    | ${'changed'}    | ${'pass-unverified'} | ${'no-injection'}
+    ${'valid'}   | ${'same'}       | ${'pass-verified'}   | ${'passed-and-injection-valid'}
+    ${'invalid'} | ${'same'}       | ${'pass-unverified'} | ${'injection-invalid'}
+    ${'valid'}   | ${'changed'}    | ${'recheck'}         | ${'check-file-changed'}
+    ${'invalid'} | ${'changed'}    | ${'recheck'}         | ${'check-file-changed'}
+    ${'valid'}   | ${'unreadable'} | ${'recheck'}         | ${'check-file-changed'}
+  `(
+    '전부 통과 · 주입 $injection · 해시 $hash → $status/$reason',
+    ({
+      injection: inj,
+      hash,
+      status,
+      reason,
+    }: {
+      injection: InjectionCase;
+      hash: HashCase;
+      status: RuleStatus;
+      reason: string;
+    }) => {
+      const record = inj === 'none' ? undefined : injection(inj === 'valid');
+      const validity = new Map<RuleId, Validity>(record === undefined ? [] : [[RULE_ID, record]]);
+      const fileHash = () => (hash === 'same' ? HASH_AT_INJECTION : hash === 'changed' ? 'sha256-now' : undefined);
+      const detail = computeRuleStatusDetail(rule(RULE_ID), {
+        approvalStates: approvals('approved'),
+        quarantined: [],
+        fileExists: () => true,
+        results: [result(REFUND_CHECK, 'pass', { ruleIds: [RULE_ID] })],
+        validity,
+        fileHash,
+      });
+      expect(detail.status).toBe(status);
+      if (detail.status === 'fail') throw new Error('unreachable');
+      expect(detail.reason).toBe(reason);
+      if (detail.status === 'pass-verified' || detail.status === 'pass-unverified') {
+        // 🟢 · 🟡 injection-invalid는 기록 그대로(차이 탐색 포함) — View의 "유효성" 열이 이것을 읽는다
+        expect(detail.validity).toEqual(reason === 'no-injection' ? undefined : record);
+      }
+      if (detail.status === 'recheck') expect(detail.changedFiles).toEqual([REFUND_CHECK.ref]);
+    },
+  );
+
+  it('🔴 · ⬜는 주입 기록과 무관하다 — 잡힌 주입이 있어도 실패는 실패, 미승인은 미승인', () => {
+    const validity = new Map<RuleId, Validity>([[RULE_ID, injection(true)]]);
+    const fileHash = () => HASH_AT_INJECTION;
+    expect(
+      computeRuleStatusDetail(rule(RULE_ID), {
+        approvalStates: approvals('approved'),
+        quarantined: [],
+        fileExists: () => true,
+        results: [result(REFUND_CHECK, 'fail', { ruleIds: [RULE_ID] })],
+        validity,
+        fileHash,
+      }).status,
+    ).toBe('fail');
+    expect(
+      computeRuleStatusDetail(rule(RULE_ID), {
+        approvalStates: approvals('provisional'),
+        quarantined: [],
+        fileExists: () => true,
+        results: [result(REFUND_CHECK, 'pass', { ruleIds: [RULE_ID] })],
+        validity,
+        fileHash,
+      }),
+    ).toEqual({ status: 'unchecked', reason: 'unapproved' });
+  });
+
+  it('changedCheckFiles는 기록에 적힌 파일만 비교하고, 바뀐 파일(읽을 수 없는 것 포함)만 돌려준다', () => {
+    const record = injection(true, {
+      [REFUND_CHECK.ref]: 'aaa',
+      [RECORD_CHECK.ref]: 'bbb',
+      'test/gone.spec.ts': 'ccc',
+    });
+    const current: Record<string, string> = { [REFUND_CHECK.ref]: 'aaa', [RECORD_CHECK.ref]: 'changed' };
+    expect(changedCheckFiles(record, (relPath) => current[relPath])).toEqual([RECORD_CHECK.ref, 'test/gone.spec.ts']);
+    expect(changedCheckFiles(record, () => 'aaa')).toEqual([RECORD_CHECK.ref, 'test/gone.spec.ts']);
+    expect(changedCheckFiles(injection(true, {}), () => undefined)).toEqual([]);
+  });
+
+  it('passDetail — 기록 없음 🟡 · 잡힘 🟢 · 못 잡음 🟡 · 해시 다름 🟠', () => {
+    const same = () => HASH_AT_INJECTION;
+    expect(passDetail(undefined, same)).toEqual({ status: 'pass-unverified', reason: 'no-injection' });
+    expect(passDetail(injection(true), same)).toEqual({
+      status: 'pass-verified',
+      reason: 'passed-and-injection-valid',
+      validity: injection(true),
+    });
+    expect(passDetail(injection(false), same)).toEqual({
+      status: 'pass-unverified',
+      reason: 'injection-invalid',
+      validity: injection(false),
+    });
+    expect(passDetail(injection(true), () => 'other')).toEqual({
+      status: 'recheck',
+      reason: 'check-file-changed',
+      changedFiles: [REFUND_CHECK.ref],
+    });
+  });
+});
+
 describe('computeRuleStatusDetail — 세부', () => {
   const approved = approvals('approved');
-  const base = { approvalStates: approved, quarantined: [], fileExists: () => true };
+  const base = { approvalStates: approved, quarantined: [], fileExists: () => true, ...NO_INJECTION };
 
   it('error 결과도 fail. failures에는 실패 결과의 failure만 (pass 결과는 섞이지 않는다)', () => {
     const r = rule(RULE_ID, { checks: [REFUND_CHECK, RECORD_CHECK] });
@@ -269,6 +409,7 @@ describe('computeRuleStatuses — since · history · commit · checkedAt', () =
     approvalStates: approved,
     quarantined: [],
     fileExists: () => true,
+    ...NO_INJECTION,
     now: NOW,
     commit: COMMIT,
   };

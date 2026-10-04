@@ -239,6 +239,10 @@ function buildRow(input: RowInput): RuleRow {
   const missing =
     detail.status === 'unchecked' && detail.reason === 'check-missing' ? missingCheckFiles(rule, input.fileExists) : [];
 
+  // 유효성(§7.4): 🟢 · 🟡(injection-invalid) 기록의 최신 주입 한 건. reasonCell이 "주입 … → ✔ 유효 / ✘ 무효" 줄로 쓴다
+  const validity =
+    detail.status === 'pass-verified' || detail.status === 'pass-unverified' ? detail.validity : undefined;
+
   return {
     ruleId: rule.id,
     ...(rule.block === undefined ? {} : { block: rule.block }),
@@ -252,6 +256,7 @@ function buildRow(input: RowInput): RuleRow {
     ...(input.decision === undefined ? {} : { decision: input.decision }),
     ...(pendingSince === undefined ? {} : { pendingSince }),
     ...(lastResult === undefined ? {} : { lastResult }),
+    ...(validity === undefined ? {} : { validity }),
     history: record === undefined ? [] : [...record.history],
     ...(missing.length === 0 ? {} : { checkFilesMissing: missing }),
   };

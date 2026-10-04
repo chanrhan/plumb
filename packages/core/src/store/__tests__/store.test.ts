@@ -108,12 +108,15 @@ describe('보호 저장소 — init → propose → approve → tamper', () => {
     // 실행 상태 · 검토 대기열(#86) — 쓰기는 오케스트레이터 몫이고 rules.yaml과 무관하다
     expect(Object.keys(t.store.runs).sort()).toEqual(['active', 'get', 'list', 'nextId', 'write']);
     expect(Object.keys(t.store.reviewQueue).sort()).toEqual(['enqueue', 'list', 'nextId']);
+    // 위반 주입 기록(#90 · #105) — injector가 쓰고 plumb check가 읽는다. rules.yaml과 무관하다
+    expect(Object.keys(t.store.injections).sort()).toEqual(['latest', 'list', 'write']);
     expect(Object.keys(t.store).sort()).toEqual([
       'approvals',
       'checks',
       'codeOpens',
       'contracts',
       'init',
+      'injections',
       'paths',
       'proposals',
       'reviewQueue',
