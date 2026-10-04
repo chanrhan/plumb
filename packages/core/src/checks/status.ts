@@ -1,7 +1,8 @@
 /**
  * 규칙별 상태 계산 (이슈 #46, 기획안 §7.3, view-verification 3.3 "상태 계산 우선순위").
  *
- * 입력은 `CheckResult[]`(실행) + 규칙(저장소) + 승인 상태(저장소) + 격리 목록(실행) + 이전 상태 기록(저장소)이고,
+ * 입력은 `CheckResult[]`(실행) + 규칙(저장소) + 승인 상태(저장소) + 격리 목록(실행) + 이전 상태 기록(저장소)
+ * + 규칙별 최신 위반 주입 기록(실행, `injections/<ruleId>/`)이고,
  * 출력은 {@link RuleStatusRecord}[] — `rule-status/<ruleId>.json`에 쓰인다 (docs/types/README "상태 기록은 두 곳").
  *
  * 판정 순서 (앞에서부터 처음 맞는 것):
@@ -11,10 +12,15 @@
  * 4. 그 규칙의 검사가 전부 격리됨 → `unchecked/quarantined` (일부만 격리면 격리된 검사의 결과를 빼고 계속)
  * 5. 결과가 하나도 없음(또는 전부 skipped) → `unchecked/not-run`
  * 6. 결과에 fail · error 있음 → `fail` + `failures[]`
- * 7. 전부 pass → `pass-unverified/no-injection` (M7 위반 주입 전까지 모든 통과가 이것)
+ * 7. 전부 pass이고 주입 기록이 없음 → `pass-unverified/no-injection`
+ * 8. 전부 pass이고 주입 기록의 `checkFileHashes`가 현재 검사 파일 해시와 다름 → `recheck/check-file-changed` + `changedFiles[]`
+ *    (§7.4 "검사 파일이 바뀌면 유효성은 무효가 되고 다시 주입한다" — 주입이 잡혔든 못 잡았든 그 기록은 더 이상 근거가 아니다)
+ * 9. 전부 pass이고 주입이 잡힘(`valid: true`) → `pass-verified/passed-and-injection-valid` + `validity`
+ * 10. 전부 pass이고 주입을 못 잡음(`valid: false`) → `pass-unverified/injection-invalid` + `validity`(차이 탐색 결과 포함)
  *
  * 🔴는 실패 결과가 있을 때만 만든다. `failure`가 없는 fail 결과는 "실패 상세 없음" 메시지의 {@link CheckFailure}가 된다 —
- * 추정으로 통과를 만들지 않는다 (§7.3). 🟢 · 🟠은 M6 · M7에서 들어온다.
+ * 추정으로 통과를 만들지 않는다 (§7.3). 🟢도 마찬가지로 주입 기록(`valid: true`)이 있을 때만 만든다 — 기획안 §7.3
+ * "🟢 = 인수 테스트 통과 + 위반 주입으로 유효성 확인". 해시 비교는 주입 기록에 적힌 파일만 본다 (injector가 해시한 인수 테스트 · PBT 파일).
  */
 
 import type {
@@ -27,6 +33,7 @@ import type {
   RuleId,
   RuleStatusDetail,
   RuleStatusRecord,
+  Validity,
 } from '../types/index.js';
 
 /** `RuleStatusRecord.history`에 남기는 최근 상태 수 (view-verification 3.3 "이력 (최근 n회)") */
@@ -47,6 +54,13 @@ export interface ComputeRuleStatusesInput {
   previous: ReadonlyMap<RuleId, RuleStatusRecord>;
   /** 검사 파일(대상 루트 기준 상대 경로)이 레포에 있는가 */
   fileExists: (relPath: string) => boolean;
+  /** 규칙별 최신 위반 주입 기록 (`injections/<ruleId>/`의 마지막 1건). 없는 규칙은 맵에 없다 (= 주입 기록 없음) */
+  validity: ReadonlyMap<RuleId, Validity>;
+  /**
+   * 검사 파일(대상 루트 기준 상대 경로)의 현재 sha256 — `Validity.checkFileHashes`와 비교한다.
+   * 읽을 수 없으면 `undefined` (→ 기록된 해시와 다른 것으로 본다)
+   */
+  fileHash: (relPath: string) => string | undefined;
   now: Date;
   /** 이번 실행의 커밋 (`git rev-parse HEAD`) */
   commit: string;
@@ -101,6 +115,29 @@ export function missingCheckFiles(rule: Rule, fileExists: (relPath: string) => b
   return rule.checks.filter((check) => check.kind !== 'static' && !fileExists(check.ref)).map((check) => check.ref);
 }
 
+/**
+ * 주입 기록 이후 바뀐 검사 파일. `validity.checkFileHashes`의 파일마다 현재 해시와 비교해 다른 것(읽을 수 없는 것 포함)을 돌려준다.
+ * 비어 있으면 유효성 기록이 아직 근거다 (§7.4)
+ */
+export function changedCheckFiles(validity: Validity, fileHash: (relPath: string) => string | undefined): string[] {
+  return Object.entries(validity.checkFileHashes)
+    .filter(([relPath, recorded]) => fileHash(relPath) !== recorded)
+    .map(([relPath]) => relPath);
+}
+
+/** 전부 통과한 규칙의 상태 — 주입 기록 유무 · 해시 일치 · 잡힘 여부로 🟡 · 🟠 · 🟢를 가른다 (파일 머리 7~10) */
+export function passDetail(
+  validity: Validity | undefined,
+  fileHash: (relPath: string) => string | undefined,
+): RuleStatusDetail {
+  if (validity === undefined) return { status: 'pass-unverified', reason: 'no-injection' };
+  const changedFiles = changedCheckFiles(validity, fileHash);
+  if (changedFiles.length > 0) return { status: 'recheck', reason: 'check-file-changed', changedFiles };
+  return validity.valid
+    ? { status: 'pass-verified', reason: 'passed-and-injection-valid', validity }
+    : { status: 'pass-unverified', reason: 'injection-invalid', validity };
+}
+
 function failureOf(rule: Rule, result: CheckResult): CheckFailure {
   if (result.failure !== undefined) return result.failure;
   return {
@@ -116,7 +153,10 @@ function failureOf(rule: Rule, result: CheckResult): CheckFailure {
 /** 규칙 하나의 상태와 근거. 파일 머리의 판정 순서 그대로 */
 export function computeRuleStatusDetail(
   rule: Rule,
-  input: Pick<ComputeRuleStatusesInput, 'approvalStates' | 'results' | 'quarantined' | 'fileExists'>,
+  input: Pick<
+    ComputeRuleStatusesInput,
+    'approvalStates' | 'results' | 'quarantined' | 'fileExists' | 'validity' | 'fileHash'
+  >,
 ): RuleStatusDetail {
   if (input.approvalStates.get(rule.id) !== 'approved') return { status: 'unchecked', reason: 'unapproved' };
   if (rule.checks.length === 0) return { status: 'unchecked', reason: 'no-checks' };
@@ -135,7 +175,7 @@ export function computeRuleStatusDetail(
   const failed = results.filter((result) => result.outcome === 'fail' || result.outcome === 'error');
   if (failed.length > 0) return failDetail(failed.map((result) => failureOf(rule, result)));
 
-  return { status: 'pass-unverified', reason: 'no-injection' };
+  return passDetail(input.validity.get(rule.id), input.fileHash);
 }
 
 /** 규칙 전부의 상태 기록. 입력 `rules` 순서 그대로 */

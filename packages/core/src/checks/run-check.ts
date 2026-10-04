@@ -6,10 +6,12 @@
  * 정적 검사(`runStaticChecks`)는 `Adapter` 인터페이스 밖이라 `staticRunner`로 따로 받는다 (CLI가 `adapter/load.ts`에서 가져와 넣는다).
  *
  * 순서:
- *   ① `store.status()` — 변조 증거여도 멈추지 않고 `CheckRun.storeStatus`에 적는다
+ *   ① `store.status()` — 변조 증거여도 멈추지 않고 `CheckRun.storeStatus`에 적는다. 규칙 · 승인 · 이전 상태 · 규칙별 최신 주입 기록
+ *      (`store.injections.latest`, #105)도 여기서 읽는다
  *   ② `adapter.runTests()` + `staticRunner()` + `adapter.extractDependencies()` — 하나가 실패해도 나머지는 계속. 실패 사유는 `runner.stderrTail`
  *   ③ `junitPath`가 있으면 `parseJunit` → `toCheckResults`. 없거나 깨졌으면 `junitMissing`
- *   ④ `computeRuleStatuses` + `computeOutOfScope` + `computeCommonRows`
+ *   ④ `computeRuleStatuses` + `computeOutOfScope` + `computeCommonRows` — 전부 통과한 규칙은 최신 주입 기록으로 🟢 · 🟡 · 🟠을 가른다
+ *      (검사 파일의 현재 sha256을 `Validity.checkFileHashes`와 비교, §7.4)
  *   ⑤ `CheckRun` 조립 → `store.checks.write`. **JUnit 결과가 있을 때만** `store.ruleStatus.write` — 러너가 죽었으면(`junitPath: null`)
  *      이전 성공 결과를 건드리지 않고 `runner.exitCode` · `stderrTail`만 기록한다 (view-verification 5절 "plumb check 실패")
  *
@@ -19,7 +21,7 @@
  */
 
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type {
@@ -30,6 +32,7 @@ import type {
   StaticRunner,
   TestRunResult,
 } from '../adapter/types.js';
+import { sha256 } from '../store/fs.js';
 import type { Store, StoreStatus } from '../store/index.js';
 import type {
   Anchor,
@@ -46,6 +49,7 @@ import type {
   RuleStatus,
   RuleStatusDetail,
   RuleStatusRecord,
+  Validity,
 } from '../types/index.js';
 import { computeCommonRows } from './common.js';
 import { type JunitCase, type JunitReport, parseJunit } from './junit.js';
@@ -261,6 +265,11 @@ export async function runCheck(deps: RunCheckDeps): Promise<RunCheckResult> {
   const approvalStates = approvalStatesFrom(approvals);
   const previousRecords = await deps.store.ruleStatus.list();
   const previous = new Map(previousRecords.map((record) => [record.ruleId, record]));
+  const validity = new Map<RuleId, Validity>();
+  for (const rule of rules) {
+    const latest = await deps.store.injections.latest(rule.id);
+    if (latest !== undefined) validity.set(rule.id, latest);
+  }
 
   // ② 실행 — 셋 중 무엇이 실패해도 나머지는 계속
   const tests = await settle(() => deps.adapter.runTests(ctx, {}));
@@ -312,6 +321,14 @@ export async function runCheck(deps: RunCheckDeps): Promise<RunCheckResult> {
   const commit = await (deps.resolveCommit ?? gitHead)(serviceRoot);
   const checkedAt = now();
   const fileExists = (relPath: string) => existsSync(resolve(serviceRoot, relPath));
+  // injector(`run/inject.ts`)와 같은 방식 — utf8 문자열의 sha256. 읽을 수 없으면 undefined (→ 기록과 다름)
+  const fileHash = (relPath: string): string | undefined => {
+    try {
+      return sha256(readFileSync(resolve(serviceRoot, relPath), 'utf8'));
+    } catch {
+      return undefined;
+    }
+  };
   const computed = junitMissing
     ? null
     : computeRuleStatuses({
@@ -321,6 +338,8 @@ export async function runCheck(deps: RunCheckDeps): Promise<RunCheckResult> {
         quarantined: [],
         previous,
         fileExists,
+        validity,
+        fileHash,
         now: checkedAt,
         commit,
       });

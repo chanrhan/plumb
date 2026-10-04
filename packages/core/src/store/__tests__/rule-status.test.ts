@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { computeRuleStatuses } from '../../checks/index.js';
-import type { CheckFailure, RuleStatusRecord } from '../../types/index.js';
+import type { CheckFailure, RuleStatusRecord, Validity } from '../../types/index.js';
 import { ValidationError } from '../index.js';
 import { makeTempStore, proposalFor, RECORD_RULE, REFUND_RULE, type TempStore } from './fixtures.js';
 
@@ -107,6 +107,8 @@ describe('store.ruleStatus', () => {
       quarantined: [],
       previous: new Map(),
       fileExists: () => false,
+      validity: new Map(),
+      fileHash: () => undefined,
       now: new Date(AT),
       commit: 'a1b2c3d',
     });
@@ -120,5 +122,60 @@ describe('store.ruleStatus', () => {
       checkedAt: AT,
       history: ['unchecked'],
     });
+  });
+
+  it('🟢 · 🟡의 validity(#105)는 그대로 저장되고, 상태와 어긋나는 기록(🟢에 valid: false 등)은 거부한다', async () => {
+    const base = {
+      id: 'i-0001' as const,
+      ruleId: REFUND_RULE.id,
+      description: '7일 검사 제거',
+      anchor: { file: 'src/domains/payment/payment.ts', line: 30 },
+      commit: 'abc1234',
+      at: AT,
+      checkFileHashes: { [CHECK.ref]: 'deadbeef' },
+    };
+    const caught: Validity = { ...base, result: 'check-failed', valid: true };
+    const missed: Validity = {
+      ...base,
+      result: 'check-passed',
+      valid: false,
+      diffSearch: { runId: 'r-0001', inputs: 100, differingOutputs: 0, verdict: 'undetermined', queueItemId: 'q-0001' },
+    };
+    const verified = statusRecord({
+      detail: { status: 'pass-verified', reason: 'passed-and-injection-valid', validity: caught },
+      history: ['pass-verified'],
+    });
+    const invalid = statusRecord({
+      ruleId: RECORD_RULE.id,
+      detail: { status: 'pass-unverified', reason: 'injection-invalid', validity: missed },
+      history: ['pass-unverified'],
+    });
+    await t.store.ruleStatus.write([verified, invalid]);
+    expect(await t.store.ruleStatus.get(REFUND_RULE.id)).toEqual(verified);
+    expect(await t.store.ruleStatus.get(RECORD_RULE.id)).toEqual(invalid);
+
+    await expect(
+      t.store.ruleStatus.write([
+        { ...verified, detail: { status: 'pass-verified', reason: 'passed-and-injection-valid', validity: missed } },
+      ]),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      t.store.ruleStatus.write([
+        { ...invalid, detail: { status: 'pass-unverified', reason: 'injection-invalid', validity: caught } },
+      ]),
+    ).rejects.toBeInstanceOf(ValidationError);
+    // 패치 본문 같은 모르는 필드는 받지 않는다 (§7.4 "사람은 설명 한 줄과 결과만 본다")
+    await expect(
+      t.store.ruleStatus.write([
+        {
+          ...verified,
+          detail: {
+            status: 'pass-verified',
+            reason: 'passed-and-injection-valid',
+            validity: { ...caught, patch: '--- a/payment.ts' },
+          },
+        },
+      ]),
+    ).rejects.toBeInstanceOf(ValidationError);
   });
 });

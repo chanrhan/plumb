@@ -5,25 +5,83 @@
  */
 
 import { z } from 'zod';
-import type { RuleId, RuleStatusDetail, RuleStatusRecord } from '../types/index.js';
-import { checkFailureSchema } from './checks.js';
+import type {
+  InjectionId,
+  ReviewQueueItemId,
+  RuleId,
+  RuleStatusDetail,
+  RuleStatusRecord,
+  RunId,
+  Validity,
+} from '../types/index.js';
+import { anchorSchema, checkFailureSchema } from './checks.js';
 import { ValidationError } from './errors.js';
 import { listFiles, readJsonFile, writeJsonAtomic } from './fs.js';
+import { INJECTION_ID_PATTERN } from './injections.js';
 import type { StorePaths } from './paths.js';
 import { ruleIdSchema } from './rules.js';
 
 export const ruleStatusSchema = z.enum(['pass-verified', 'pass-unverified', 'recheck', 'fail', 'unchecked']);
 
+/** 차이 탐색 결과 (`DiffSearch`, §7.4). 무효 ✘ 주입에만 붙는다 */
+export const diffSearchSchema = z
+  .object({
+    runId: z.custom<RunId>((v) => typeof v === 'string' && /^r-.+$/.test(v), 'r-… 꼴이 아니다'),
+    inputs: z.number().int().nonnegative(),
+    differingOutputs: z.number().int().nonnegative(),
+    verdict: z.enum(['real-violation', 'weak-check', 'undetermined']),
+    queueItemId: z
+      .custom<ReviewQueueItemId>((v) => typeof v === 'string' && /^q-.+$/.test(v), 'q-… 꼴이 아니다')
+      .optional(),
+  })
+  .strict();
+
+const validityBase = {
+  id: z.custom<InjectionId>((v) => typeof v === 'string' && INJECTION_ID_PATTERN.test(v), 'i-nnnn 꼴이 아니다'),
+  ruleId: ruleIdSchema,
+  description: z.string().min(1),
+  anchor: anchorSchema.optional(),
+  commit: z.string(),
+  at: z.string(),
+  checkFileHashes: z.record(z.string()),
+};
+
+/** 잡힌 주입 ✔ — 🟢 `pass-verified`의 `validity` */
+export const validValiditySchema = z
+  .object({ ...validityBase, result: z.literal('check-failed'), valid: z.literal(true) })
+  .strict() satisfies z.ZodType<Validity & { valid: true }, z.ZodTypeDef, unknown>;
+
+/** 통과해 버린 주입 ✘ (+ 차이 탐색) — 🟡 `pass-unverified/injection-invalid`의 `validity` */
+export const invalidValiditySchema = z
+  .object({
+    ...validityBase,
+    result: z.literal('check-passed'),
+    valid: z.literal(false),
+    diffSearch: diffSearchSchema.optional(),
+  })
+  .strict() satisfies z.ZodType<Validity & { valid: false }, z.ZodTypeDef, unknown>;
+
 /**
- * `RuleStatusDetail`. `fail`의 `failures`는 `nonempty()`. `pass-verified` · `recheck`의 선택 필드(유효성 · 대기열)는 M6 · M7에서
- * 스키마에 들어온다 — 지금은 `plumb check`가 만들지 않으므로 받지 않는다 (strict).
+ * `RuleStatusDetail`. `fail`의 `failures`는 `nonempty()`. 🟢 · 🟡의 `validity`는 `plumb check`가 `injections/<ruleId>/`의
+ * 최신 기록을 그대로 옮긴 것(#105) — 🟢에는 잡힌 기록(`valid: true`)만, 🟡에는 못 잡은 기록(`valid: false`)만 올 수 있다. `recheck`의
+ * `queueItemId`(해석 불일치)는 아직 `plumb check`가 만들지 않으므로 받지 않는다 (strict).
  */
 export const ruleStatusDetailSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('fail'), failures: z.array(checkFailureSchema).nonempty() }).strict(),
   z
-    .object({ status: z.literal('pass-verified'), reason: z.enum(['passed-and-injection-valid', 'static-proof']) })
+    .object({
+      status: z.literal('pass-verified'),
+      reason: z.enum(['passed-and-injection-valid', 'static-proof']),
+      validity: validValiditySchema.optional(),
+    })
     .strict(),
-  z.object({ status: z.literal('pass-unverified'), reason: z.enum(['no-injection', 'injection-invalid']) }).strict(),
+  z
+    .object({
+      status: z.literal('pass-unverified'),
+      reason: z.enum(['no-injection', 'injection-invalid']),
+      validity: invalidValiditySchema.optional(),
+    })
+    .strict(),
   z
     .object({
       status: z.literal('recheck'),
