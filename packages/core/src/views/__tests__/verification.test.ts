@@ -17,7 +17,15 @@ import { createProgram } from '../../cli/program.js';
 import { loadConfigFile } from '../../config/load.js';
 import { writeDecision } from '../../decisions/store.js';
 import { openStore, type Store } from '../../store/index.js';
-import type { CheckFailure, CheckRun, PlumbConfig, Proposal, Rule, RuleStatusRecord } from '../../types/index.js';
+import type {
+  CheckFailure,
+  CheckRun,
+  PlumbConfig,
+  Proposal,
+  Rule,
+  RuleStatusRecord,
+  Validity,
+} from '../../types/index.js';
 import { PLUMB_OPEN_SCHEME } from '../markdown.js';
 import type { ViewContext } from '../types.js';
 import {
@@ -125,6 +133,26 @@ const FAIL_RECORD: RuleStatusRecord = {
   checkedAt: '2026-10-02T08:59:00.000Z',
   history: ['pass-unverified', 'fail'],
 };
+
+/** 인수 테스트까지 전부 통과한 실행 (🟢 · 🟡 행용) */
+const PASSING_RUN: CheckRun = {
+  ...FAILING_RUN,
+  runner: { exitCode: 0, stderrTail: [] },
+  results: [{ ...(FAILING_RUN.results[0] as CheckRun['results'][number]), outcome: 'pass', failure: undefined }],
+};
+
+const INJECTION_COMMIT = 'b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0a1';
+
+/** 위반 주입 기록 한 건 (§7.4) — 결과(검사 실패 ✔ / 검사 통과 ✘)만 테스트마다 바꾼다 */
+const INJECTION_BASE = {
+  id: 'i-0001' as const,
+  ruleId: REFUND_RULE.id,
+  description: '7일 경계를 8일로 바꿈',
+  anchor: { block: 'payment', file: 'src/domains/payment/refund.ts', line: 17 },
+  commit: INJECTION_COMMIT,
+  at: '2026-10-01T09:00:00.000Z',
+  checkFileHashes: { [CHECK_FILE]: 'sha256:deadbeef' },
+} satisfies Omit<Validity, 'result' | 'valid'>;
 
 /** 생성기는 어댑터를 부르지 않는다 — 부르면 실패하는 가짜 */
 const NEVER_ADAPTER: Adapter = {
@@ -443,9 +471,66 @@ describe('verificationView.render — §6.3 화면을 Markdown으로', () => {
     });
     const row = markdown.split('\n').find((line) => line.startsWith('| 🟡 ')) ?? '';
     expect(row).toContain(`${VALIDITY_UNKNOWN} · ⚠ 3일 체류`);
+    expect(row).not.toMatch(/→ 검사 (실패 ✔ 유효|통과 ✘ 무효)/);
     expect(markdown).toContain('🟢 0 🟡 1 🟠 0 🔴 0 ⬜ 1');
     expect(markdown).toContain('검증된 통과 비율 🟢/(🟢+🟡) 0/1 (0%)');
     expect(markdown).toContain(OUT_OF_SCOPE_HEADER);
+  });
+
+  it('🟢 pass-verified 행: 사유 칸에 "주입 <commit>: <설명> → 검사 실패 ✔ 유효" 줄 (#111)', async () => {
+    await seedRules();
+    await store.checks.write(PASSING_RUN);
+    const validity: Validity = { ...INJECTION_BASE, result: 'check-failed', valid: true };
+    await store.ruleStatus.write([
+      {
+        ...FAIL_RECORD,
+        detail: { status: 'pass-verified', reason: 'passed-and-injection-valid', validity },
+        since: '2026-10-01T09:00:00.000Z',
+        history: ['pass-unverified', 'pass-verified'],
+      },
+    ]);
+
+    const view = await verificationView.generate(ctxOf());
+    const markdown = verificationView.render(view);
+
+    const item = view.blocks[0]?.items.find((row) => row.ruleId === REFUND_RULE.id);
+    expect(item).toMatchObject({ detail: { status: 'pass-verified', reason: 'passed-and-injection-valid' }, validity });
+    expect(item).not.toHaveProperty('pendingSince');
+    const row = markdown.split('\n').find((line) => line.startsWith('| 🟢 ')) ?? '';
+    expect(row).toContain('유효 ✔ (주입으로 확인)<br>주입 b2c3d4e: 7일 경계를 8일로 바꿈 → 검사 실패 ✔ 유효');
+    expect(row).not.toContain('⚠');
+    expect(markdown).toContain('🟢 1 🟡 0 🟠 0 🔴 0 ⬜ 1');
+    expect(markdown).toContain('검증된 통과 비율 🟢/(🟢+🟡) 1/1 (100%)');
+  });
+
+  it('🟡 injection-invalid 행: 사유 칸에 "주입 <commit>: <설명> → 검사 통과 ✘ 무효" 줄 + ⚠ 체류 (#111)', async () => {
+    await seedRules();
+    await store.checks.write(PASSING_RUN);
+    const validity: Validity = { ...INJECTION_BASE, result: 'check-passed', valid: false };
+    await store.ruleStatus.write([
+      {
+        ...FAIL_RECORD,
+        detail: { status: 'pass-unverified', reason: 'injection-invalid', validity },
+        since: '2026-10-01T09:00:00.000Z',
+        history: ['pass-unverified'],
+      },
+    ]);
+
+    const view = await verificationView.generate(ctxOf());
+    const markdown = verificationView.render(view);
+
+    expect(view.blocks[0]?.items.find((row) => row.ruleId === REFUND_RULE.id)).toMatchObject({
+      detail: { status: 'pass-unverified', reason: 'injection-invalid' },
+      validity,
+      pendingSince: '2026-10-01T09:00:00.000Z',
+    });
+    const row = markdown.split('\n').find((line) => line.startsWith('| 🟡 ')) ?? '';
+    expect(row).toContain(
+      '유효성 무효 ✘ (주입이 검사를 통과) · ⚠ 1일 체류<br>주입 b2c3d4e: 7일 경계를 8일로 바꿈 → 검사 통과 ✘ 무효',
+    );
+    expect(row).not.toContain(VALIDITY_UNKNOWN);
+    expect(markdown).toContain('🟢 0 🟡 1 🟠 0 🔴 0 ⬜ 1');
+    expect(markdown).toContain('검증된 통과 비율 🟢/(🟢+🟡) 0/1 (0%)');
   });
 
   it('검사 기록 없음: "마지막 검사 없음" + 5절 문구 + 행마다 (기록 없음) — 검사 범위 밖은 그래도 쓴다', async () => {
