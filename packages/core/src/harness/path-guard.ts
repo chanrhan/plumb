@@ -31,6 +31,11 @@ export interface PathGuardConfig {
   rules: readonly PathRule[];
   /** 거부 로그. 기본 stderr `[hook] deny <tool> <path> (<이유>)` */
   log?: (line: string) => void;
+  /**
+   * 거부 사유에 덧붙이는 안내. 사유는 모델에게 그대로 돌아가므로(#94 실측) "작업 디렉토리는 <cwd>, 스텁은 <abs>" 같은 힌트를 주면
+   * 모델이 중첩 경로를 잘못 축약했을 때 스스로 고친다
+   */
+  hint?: string;
 }
 
 export interface PathDecision {
@@ -141,7 +146,7 @@ export function makePathGuard(config: PathGuardConfig): HookCallback {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: `${decision.reason}: ${decision.relPath}`,
+        permissionDecisionReason: `${decision.reason}: ${decision.relPath}. 작업 디렉토리(cwd)는 ${config.root}${config.hint ? `. ${config.hint}` : ''}`,
       },
     };
   };

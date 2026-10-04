@@ -12,7 +12,9 @@ import type { HookCallback, PreToolUseHookInput } from '@anthropic-ai/claude-age
 export interface BashRule {
   /** 사람이 읽는 이름 — 거부 로그에 찍힌다 */
   name: string;
-  pattern: RegExp;
+  /** 둘 중 하나. `test`가 있으면 그것으로 판정한다 */
+  pattern?: RegExp;
+  test?: (command: string) => boolean;
 }
 
 export interface BashGuardConfig {
@@ -70,9 +72,34 @@ export function protectedPathRules(paths: readonly string[]): BashRule[] {
 
 export function decideBash(config: BashGuardConfig, command: string): BashDecision {
   for (const rule of config.rules) {
-    if (rule.pattern.test(command)) return { allow: false, rule: rule.name };
+    const hit = rule.test ? rule.test(command) : (rule.pattern?.test(command) ?? false);
+    if (hit) return { allow: false, rule: rule.name };
   }
   return { allow: true };
+}
+
+/**
+ * cwd 밖 **절대 경로**로의 쓰기(리다이렉션 · tee · cp/mv 목적지). 파일 도구는 경로 가드가 cwd 밖을 막지만 셸은 못 보므로(r-0001에서
+ * implementer가 Bash로 원본 `.work/…`에 썼다) 여기서 막는다. 읽기(`cat /etc/…`)는 막지 않는다 — 쓰기만
+ */
+export function outsideCwdWriteRules(cwd: string): BashRule[] {
+  const root = cwd.replace(/\/$/, '');
+  const inside = (p: string) => p === root || p.startsWith(`${root}/`);
+  const absTargets = (command: string): string[] => {
+    const out: string[] = [];
+    for (const m of command.matchAll(/>>?\s*(["']?)(\/[^\s"'|;&]+)\1/g)) out.push(m[2] ?? '');
+    for (const m of command.matchAll(
+      /(?:^|[\s;&|(])(?:tee|cp|mv|install)\b[^;&|]*?\s(["']?)(\/[^\s"'|;&]+)\1(?=\s|$|["'])/g,
+    ))
+      out.push(m[2] ?? '');
+    return out.filter(Boolean);
+  };
+  return [
+    {
+      name: '작업 디렉토리 밖 절대 경로 쓰기',
+      test: (command) => absTargets(command).some((p) => !inside(p) && !p.startsWith('/dev/')),
+    },
+  ];
 }
 
 export function makeBashGuard(config: BashGuardConfig): HookCallback {

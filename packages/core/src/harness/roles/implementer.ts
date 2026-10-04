@@ -8,7 +8,13 @@
 
 import type { HookCallback, HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
 import type { PlumbConfig, Rule } from '../../types/index.js';
-import { GIT_WRITE_RULES, makeBashGuard, NETWORK_RULES, protectedPathRules } from '../bash-guard.js';
+import {
+  GIT_WRITE_RULES,
+  makeBashGuard,
+  NETWORK_RULES,
+  outsideCwdWriteRules,
+  protectedPathRules,
+} from '../bash-guard.js';
 import { makePathGuard, type PathRule } from '../path-guard.js';
 import { buildRoleOptions } from '../role-options.js';
 
@@ -81,7 +87,7 @@ export function implementerSystemPrompt(
     '- .git/** · plumb/** · plumb.config.json · 보호 저장소 쓰기',
     '',
     '## 이의 제기',
-    `- 테스트가 규칙 진술과 다르거나 통과가 불가능하다고 판단하면 **테스트를 고치지 말고** ${disputes}/d-<짧은이름>.md 를 쓴다. 첫 줄은 한 문장 요약, 그 아래 근거(어떤 입력에서 진술과 테스트가 갈리는가)`,
+    `- 테스트가 규칙 진술과 다르거나 통과가 불가능하다고 판단하면 **테스트를 고치지 말고** ${disputes}/d-<짧은이름>.md 를 **Write 도구로** 쓴다(이 경로 그대로 — 셸 리다이렉션으로 쓰지 않는다). 첫 줄은 한 문장 요약(10자 이상), 그 아래 근거(어떤 입력에서 진술과 테스트가 갈리는가, 20자 이상)`,
     '- 이의 제기 파일을 썼으면 더 구현하지 말고 끝낸다',
     '',
     '## 끝낼 때',
@@ -91,9 +97,19 @@ export function implementerSystemPrompt(
 
 export function implementerOptions(input: ImplementerInput): Options {
   const protectedPaths = implementerProtectedPaths(input.config);
-  const pathGuard = makePathGuard({ root: input.cwd, rules: implementerPathRules(input.config), log: input.log });
+  const pathGuard = makePathGuard({
+    root: input.cwd,
+    rules: implementerPathRules(input.config),
+    log: input.log,
+    hint: `이의 제기 파일은 ${input.disputesDir ?? '.work/implementer/disputes'} 에 Write 도구로`,
+  });
   const bashGuard = makeBashGuard({
-    rules: [...NETWORK_RULES, ...GIT_WRITE_RULES, ...protectedPathRules(protectedPaths)],
+    rules: [
+      ...NETWORK_RULES,
+      ...GIT_WRITE_RULES,
+      ...protectedPathRules(protectedPaths),
+      ...outsideCwdWriteRules(input.cwd),
+    ],
     log: input.log,
   });
   const useSandbox = input.sandbox ?? true;

@@ -61,13 +61,14 @@ export function testWriterSystemPrompt(input: Pick<TestWriterInput, 'rules' | 's
     ...ruleLines,
     '',
     '## 볼 수 있는 것',
-    `- 구현의 타입 시그니처: ${input.stubsDir} 아래 .d.ts (읽기 전용). 구현 본문(src/**)은 읽을 수 없고 읽으려 하면 거부된다 — 거부되면 다시 시도하지 말고 스텁과 계약으로 판단한다`,
+    `- 구현의 타입 시그니처: ${input.stubsDir} 아래 .d.ts (읽기 전용). 이 경로를 **그대로** 쓴다(줄이거나 다시 계산하지 않는다). 구현 본문(src/**)은 읽을 수 없고 읽으려 하면 거부된다 — 거부되면 다시 시도하지 말고 스텁과 계약으로 판단한다`,
+    `- Glob · Grep은 반드시 path를 test/ 또는 ${input.stubsDir} 로 지정한다. 작업 디렉토리 전체(path 없음 · ".")는 src/**를 포함하므로 거부된다`,
     ...contractLines,
     '- 기존 테스트: test/**',
     '',
     '## 규칙',
     '- 파일은 test/acceptance/ 아래 *.spec.ts 에만 쓴다. 다른 곳에 쓰면 거부된다',
-    '- import는 실제 경로(@/… 또는 상대 경로)로 쓴다. 스텁 경로를 import하지 않는다',
+    '- import는 **상대 경로**로 쓴다(예: ../../src/domains/payment). tsconfig의 @/ 별칭은 테스트 러너가 못 풀 수 있다. 스텁 경로를 import하지 않는다',
     '- 테스트는 규칙의 진술(EARS)을 그대로 검증한다. 구현이 아직 없거나 틀렸으므로 **지금은 실패해야 정상**이다. 통과하게 만들려고 테스트를 약하게 쓰지 않는다',
     '- 셸은 없다. 테스트 실행은 하네스가 한다. 끝나면 쓴 파일 목록과 각 테스트가 검증하는 진술을 한 줄씩 적는다',
   ].join('\n');
@@ -75,7 +76,12 @@ export function testWriterSystemPrompt(input: Pick<TestWriterInput, 'rules' | 's
 
 export function testWriterOptions(input: TestWriterInput): Options {
   if (input.rules.length === 0) throw new Error('test-writer: 담당 규칙이 없다');
-  const guard = makePathGuard({ root: input.cwd, rules: TEST_WRITER_PATH_RULES, log: input.log });
+  const guard = makePathGuard({
+    root: input.cwd,
+    rules: TEST_WRITER_PATH_RULES,
+    log: input.log,
+    hint: `스텁 디렉토리는 ${input.stubsDir} (이 경로 그대로). 쓰기는 test/acceptance/ 아래만`,
+  });
   return buildRoleOptions({
     role: 'test-writer',
     config: input.config,
