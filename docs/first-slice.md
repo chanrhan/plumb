@@ -82,3 +82,18 @@ plumb rule propose --file examples/testbed/plumb/proposals/pay.refund-window.jso
 - ② 테스트 수가 회차마다 다르다(r-0003: 3개, r-0004: 11개) — test-writer가 쓰는 테스트 수에 하한·상한이 없다.
 
 **§15.1 다섯 항목 전부 ✔ — M9 종료 증거 충족.**
+
+## 4. 두 번째 슬라이스 — `auth.session-expiry` (M10 #119, 슬라이스 반복)
+
+첫 슬라이스와 다른 점: auth 블록 · DB 없음 · 기존 구현은 `verifySession()`이 만료 검사 없이 세션을 돌려주는 상태(첫 슬라이스의 `refund()`와 같은 구도). 준비 파일: `plumb/proposals/auth.session-expiry.json`(p-0002) · `plumb/decisions/D-0002.md` · `src/domains/auth/{types,session,index}.ts`.
+
+```bash
+plumb rule propose --file examples/testbed/plumb/proposals/auth.session-expiry.json
+plumb approve auth.session-expiry
+plumb run --rules auth.session-expiry --detach
+plumb runs show r-000n
+```
+
+### 4.1 결과
+
+(채울 것 — `runs show` 단계 표 · 비용 · 시간 · `/views` 🟢 2개 · 첫 슬라이스와 다른 점 · 발견)

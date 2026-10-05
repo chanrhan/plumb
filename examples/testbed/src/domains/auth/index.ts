@@ -1,2 +1,3 @@
 // 공개 진입점. 외부(app/, 다른 도메인)는 이 파일만 import한다 (기획안 §4.4, §12)
-export {};
+export { SessionExpiredError, verifySession } from './session';
+export type { Session, SessionToken } from './types';

@@ -1,0 +1,20 @@
+{
+  "id": "p-0002",
+  "ruleId": "auth.session-expiry",
+  "changeKind": "add",
+  "proposedBy": "cli",
+  "proposedAt": "2026-10-06T00:00:00.000Z",
+  "after": {
+    "id": "auth.session-expiry",
+    "block": "auth",
+    "kind": "business",
+    "statement": "WHEN 세션 토큰의 만료 시각(expiresAt)이 검증 시각 이전이면 THE SYSTEM SHALL 요청을 거절한다",
+    "source": "plan:AUTH-01",
+    "risk": "high",
+    "depends_on": [],
+    "checks": ["test/acceptance/session-expiry.property.spec.ts"],
+    "decision": "D-0002"
+  },
+  "requiresPriorApproval": false,
+  "applied": "provisional"
+}
