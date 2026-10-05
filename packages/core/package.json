@@ -35,7 +35,8 @@
     "test": "vitest run",
     "smoke": "tsx src/harness/smoke.ts",
     "harness:probe": "tsx src/harness/probe.ts",
-    "isolation-test": "tsx src/harness/isolation-test.ts"
+    "isolation-test": "tsx src/harness/isolation-test.ts",
+    "first-slice-check": "node dist/harness/first-slice-check.js"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
