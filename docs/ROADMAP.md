@@ -21,7 +21,7 @@
 | M5 | 완료 | `plumb check`: Vitest JUnit + depcruise → 규칙별 상태 + 검사 범위 밖 → `checks/`·`rule-status/`. CLI 표와 UI `/rules` 상태 열 연결 |
 | M6 | 완료 | #86~#89 + #94 머지. 로컬 r-0001: `plumb run --detach` → ①②③④ 완주(103초 · $0.29), 이의 제기 → 재검토 `test-wrong`(alias 원인 → #99). UI `/runs` #107 |
 | M7 | 완료 | #90 injector · #91 차이 탐색. 로컬 `r-0003` 단계 ⑤에서 주입 1 · 잡힘 1, `injections/pay.refund-window/i-0001.json` valid=true (2026-10-05, `docs/first-slice.md` 3.1) |
-| M9 | 이슈 전부 머지 · 자동 판정 5/5 · ④ 수동 확인 대기 | #102 ⑤⑥ 연결 · #104 대조표(M10 후보 27개) · #105 🟢 판정 · #111 View 유효성 열 · #103 `pnpm first-slice-check` **5/5 ✅**(로컬 `r-0003` 완주 100초 · $0.32) · #115 `--detach` 유령 running 수정. 남은 종료 증거: ④ 화면만으로 승인→실행→View(`docs/first-slice.md` 3.2) |
+| M9 | 완료 | §15.1 다섯 항목 ✔ — `pnpm first-slice-check` 5/5(로컬 `r-0003`, 100초 · $0.32) + ④ 화면만으로 승인→실행→View(`r-0004`) · 대조표 `docs/screens/compare.md`(M10 후보 27개). `docs/first-slice.md` 3절 |
 | M8 | #63 · #67만 남음 | View 6개 생성기 + `plumb views` + UI `/views`(Markdown·Mermaid, `plumb://open` 점프) 완료. testbed에서 `plumb check --views` → 12 파일. 흐름도는 spike 결과 A안(트레이스 + 정적) — 결정 #67 사람 확인 대기. #63 타입 보완 진행 중 |
 
 ## 마일스톤
