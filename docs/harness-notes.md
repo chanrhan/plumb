@@ -252,4 +252,8 @@ exit 0
 - **`--detach` 유령 running(#115)**: 부모가 선기록한 `running`을 자식이 다른 실행으로 보고 즉시 죽어 ①·M7이 판정 불가였다. 수정은 PR #116.
 - 격리 시험 로컬 12/12 두 번(비용 $0.1145 · implementer 첫 턴 캐시 8,517, 기준 20k 안). `[stubs] tsc exit 0` — `prisma generate` 뒤라 7.2의 exit 2는 사라졌다.
 
-(채울 것 — #116 반영 뒤 로컬 완주 결과 표)
+결과(3회차, #116 반영 뒤 — 표 전문은 `docs/first-slice.md` 3.1): **`r-0003` 완주 100초 · $0.3163**, 단계 ②(3 전부 실패) → ③(3/3 통과, Stop 차단 0) → ④ `pass-unverified` → ⑤ 주입 1 · 잡힘 1(`i-0001` valid=true, 7일 검사 제거) → ⑥ View 6개. `pnpm first-slice-check` **5/5 ✅**(①②③⑤ + M7). 역할별 비용 test-writer $0.116 · implementer $0.156 · injector $0.044.
+
+- **M7 종료 증거 충족**: 주입이 인수 테스트 실패로 잡히고 `injections/pay.refund-window/i-0001.json`에 유효성이 기록됐다.
+- 첫 슬라이스 1회 비용 ≈ $0.32 · 100초 — 예산 상한 $3의 1/10. 모델은 역할 셋 다 `claude-sonnet-5-5`.
+- 남은 것: ④ 화면만으로 승인→실행→View(수동).

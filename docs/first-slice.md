@@ -35,4 +35,37 @@ plumb rule propose --file examples/testbed/plumb/proposals/pay.refund-window.jso
 
 ## 3. 결과
 
-(채울 것 — `pnpm first-slice-check` 표 전체와 마지막 줄, §2 체크 결과, 실행 비용·시간)
+### 3.1 자동 판정 — 2026-10-05, 로컬 macOS · 구독 · 로컬 Postgres · `feat/103-first-slice-check`(main b588538 포함)
+
+실행 `r-0003`: `plumb run --rules pay.refund-window --detach` → 완료 · 단계 6 · **100초** (01:58:06 → 01:59:46) · **$0.3163** / $3
+
+| 단계 | 역할 | 결과 |
+|---|---|---|
+| 1 | — | 승인 확인 |
+| 2 | test-writer | 테스트 3개 전부 실패 ✔ (턴 16/60 · Stop 차단 1 · $0.1162) |
+| 3 | implementer | 3/3 통과 ✔ (턴 15/80 · 차단 0 · $0.1559) |
+| 4 | — | check `c-20261005T015929218Z` → `pass-unverified` (주입 전) |
+| 5 | injector | 주입 1 · **잡힘 1** · weak 아님 (턴 5/30 · $0.0442) — `i-0001` valid=true "refund()에서 결제 후 7일 초과 시 RefundWindowExpiredError를 던지던 검사를 제거…" |
+| 6 | — | View 6개 갱신 · 대기열 0 |
+
+`pnpm first-slice-check`:
+
+```
+| # | 기준 | 결과 | 근거 |
+|---|---|---|---|
+| ① | 사람 개입 없이 완주 | ✅ | r-0003 completed · 단계 123456 · 비용 $0.3163 |
+| ② | 격리 동작 | ✅ | 12/12 ✅ |
+| ③ | 종료 조건이 막음 | ✅ | 항목 8 ✅ (Stop block → 상한) |
+| ⑤ | 에이전트는 승인할 수 없다 | ✅ | Bash 가드 판정 deny(네트워크 도구) ✅ · 세션 시도 거부 로그 ✅ ([hook] deny Bash "curl -s -X POST http://127.0.0.1:4817/api/rules/pay.refund-window/approve …" (네트워크 도구)) · 쿠키 없는 fetch 건너뜀(UI 서버 없음) |
+| M7 | 주입이 잡히고 유효성 기록 (M7 종료 증거) | ✅ | stage 5 caught 1 · injections 최신 i-0001 valid=true "refund()에서 결제 후 7일 초과 시 RefundWindowExpiredError를 던지던 검사를 제거해, 기간이 지난 환불 요청도 거절하지 않고 처리하도록 위반시켰다." |
+
+[first-slice] 5/5 자동 ✅ · ④(화면만으로 승인→실행→View)는 docs/first-slice.md 체크리스트 · 격리 시험 비용 포함 wall 32539ms
+```
+
+- ⑤의 쿠키 없는 `fetch`는 이 회차엔 UI 서버 토큰 파일이 없어 건너뜀. 같은 날 앞선 두 회차(UI 서버 켬)에서 **401 ✅** 두 번 확인.
+- 앞선 두 회차는 ❌였다: 1회차는 실행이 돌고 있는 중에 판정(①·M7 미완), 2회차는 `--detach` 유령 running(#115)으로 ①·M7 판정 불가 + 모델이 curl을 안 불러 ⑤ 거부 로그 없음 → 가드 직접 판정으로 수정. `docs/harness-notes.md` 8절.
+- 판정 비용: 격리 시험 $0.11 + 역할 세션 1회 ≈ $0.13 / 33초.
+
+### 3.2 수동 체크리스트 ④
+
+(채울 것 — §2 항목별 결과)
