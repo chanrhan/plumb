@@ -82,3 +82,37 @@ plumb rule propose --file examples/testbed/plumb/proposals/pay.refund-window.jso
 - ② 테스트 수가 회차마다 다르다(r-0003: 3개, r-0004: 11개) — test-writer가 쓰는 테스트 수에 하한·상한이 없다.
 
 **§15.1 다섯 항목 전부 ✔ — M9 종료 증거 충족.**
+
+## 4. 두 번째 슬라이스 — `auth.session-expiry` (M10 #119, 슬라이스 반복)
+
+첫 슬라이스와 다른 점: auth 블록 · DB 없음 · 기존 구현은 `verifySession()`이 만료 검사 없이 세션을 돌려주는 상태(첫 슬라이스의 `refund()`와 같은 구도). 준비 파일: `plumb/proposals/auth.session-expiry.json`(p-0002) · `plumb/decisions/D-0002.md` · `src/domains/auth/{types,session,index}.ts`.
+
+```bash
+plumb rule propose --file examples/testbed/plumb/proposals/auth.session-expiry.json
+plumb approve auth.session-expiry
+plumb run --rules auth.session-expiry --detach
+plumb runs show r-000n
+```
+
+### 4.1 결과
+
+2026-10-06 로컬, `feat/119-second-slice`(main 포함). `r-0005`: **완료 · 단계 6 · 80초**(02:54:46 → 02:56:06 UTC) · **$0.2130** / $3
+
+| 단계 | 역할 | 결과 |
+|---|---|---|
+| 1 | — | 승인 확인 |
+| 2 | test-writer | 3개 전부 실패 ✔ (턴 13/60 · Stop 차단 1 · $0.1008) |
+| 3 | implementer | 3/3 통과 ✔ (턴 7/80 · 차단 0 · $0.0811) |
+| 4 | — | `c-20261006T025553044Z` → `pass-unverified` |
+| 5 | injector | 주입 1 · **잡힘 1** · weak 아님 (턴 4/30 · $0.0311) |
+| 6 | — | View 6개 · 대기열 0 |
+
+`/runs` 상세: 대상 `auth.session-expiry` 🟢 · 예산 7%. `/rules`: 두 규칙 다 `승인`.
+
+첫 슬라이스(`r-0003`)와 다른 점:
+- 시간 100초 → 80초, 비용 $0.32 → $0.21. implementer 턴 15 → 7 — DB · Prisma가 없고 고칠 함수가 하나(`verifySession`)라 짧다. test-writer는 13턴으로 비슷하다(스텁 읽기 · 테스트 쓰기 · Stop 차단 1회 패턴 동일).
+- 기존 구현이 없는 블록에서도 implementer가 공개 진입점(`index.ts`)과 `session.ts`만으로 길을 찾았다 — 파일을 새로 만들 필요가 없는 과제였으므로 "새 파일 생성" 경로는 아직 미검증.
+- 테스트 수는 다시 3개(r-0003 3 · r-0004 11 · r-0005 3) — 하한 · 상한 없음은 그대로 관찰.
+- 파이프라인 · 하네스 · UI에서 고칠 것이 나오지 않았다 → 코어 이슈 0건.
+
+관찰: 사용자가 `plumb run --detach` 직후 본 `/rules`는 `auth.session-expiry` 상태 ⬜ · 마지막 검사가 전날 `dad0d87`였다 — 단계 ④가 돌기 전의 정상 상태(상태 · 마지막 검사는 `rule-status/` · `checks/`에서 읽는다). 실행 완료 뒤 새로고침하면 🟢여야 하며, 아니면 이슈로 연다.
