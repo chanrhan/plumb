@@ -1,10 +1,12 @@
-import type { StatusResponse } from '@plumb/core';
+import type { BlocksResponse, StatusResponse } from '@plumb/core';
 import { toStatusResponse } from '@plumb/core';
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { BlockTree } from '@/components/blocks/BlockTree';
 import { COOKIE, isValidSession } from '@/lib/auth';
+import { readBlocksResponse } from '@/lib/blocks';
 import { getStore } from '@/lib/store';
 import './globals.css';
 
@@ -39,6 +41,21 @@ async function loadTopBar(): Promise<TopBar> {
   }
 }
 
+type Sidebar = { kind: 'no-session' } | { kind: 'ok'; blocks: BlocksResponse } | { kind: 'error'; message: string };
+
+/**
+ * 블록 트리 값 (`GET /api/blocks`와 같은 읽기 모델, #121). 세션이 없으면 저장소 값을 보이지 않는다.
+ * 읽기에 실패하면(아키텍처 View JSON이 반쪽 등) "블록 트리를 읽지 못함"에 오류를 `title`로 적는다 — 반쪽을 그리지 않는다.
+ */
+async function loadSidebar(hasSession: boolean): Promise<Sidebar> {
+  if (!hasSession) return { kind: 'no-session' };
+  try {
+    return { kind: 'ok', blocks: await readBlocksResponse() };
+  } catch (error) {
+    return { kind: 'error', message: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 function formatLastCheck(lastCheck: StatusResponse['lastCheck']): string {
   if (lastCheck === undefined) return '없음';
   const commit = lastCheck.commit.slice(0, 7);
@@ -48,10 +65,11 @@ function formatLastCheck(lastCheck: StatusResponse['lastCheck']): string {
 /**
  * 공통 레이아웃 뼈대 (docs/screens/README.md 2절).
  * 상단 바 4자리(프로젝트 이름 · 저장소 상태 · 마지막 검사 · ⚠)는 서버 컴포넌트에서 `getStore().status()`로 채운다 (#33).
- * 블록 트리는 M8 `/api/blocks`까지 "블록 아직 없음".
+ * 블록 트리는 `readBlocksResponse()`(= `GET /api/blocks`)로 채운다 (#121) — 그래프가 없으면 "블록 아직 없음".
  */
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const bar = await loadTopBar();
+  const sidebar = await loadSidebar(bar.kind !== 'no-session');
   const status = bar.kind === 'ok' ? bar.status : null;
   const title = bar.kind === 'error' ? `저장소를 읽지 못함: ${bar.message}` : undefined;
 
@@ -76,7 +94,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           </header>
           <aside className="sidebar">
             <h2>블록 트리</h2>
-            <p>블록 아직 없음</p>
+            {sidebar.kind === 'ok' ? (
+              <BlockTree data={sidebar.blocks} />
+            ) : sidebar.kind === 'error' ? (
+              <p title={sidebar.message}>블록 트리를 읽지 못함</p>
+            ) : (
+              <p>—</p>
+            )}
           </aside>
           <main className="main">{children}</main>
           <nav className="nav">
