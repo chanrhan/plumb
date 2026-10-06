@@ -3,6 +3,7 @@
  * 401(미들웨어 — GET · POST 둘 다) → 빈 목록 `{ items: [], open: 0 }` → 코어 API로 올린 항목(r-0001의 이의 제기 1건 + 실행 실패 1건)이
  * 목록에 생성 순으로 · `open` 2 → resolve 404(꼴 아님 · 없는 id) · 400(본문 오류) → 200 `{ item.resolvedAt }` · `open` 1 ·
  * `status().reviewQueue` 1 감소(상단 `⚠`) → 같은 항목 다시 → 409 `review-item-resolved` + 이미 처리된 항목 → `plumb run`이 올린 모양(`resolvedAt` 없음)은 그대로.
+ * 이슈 #130: `[처리]`가 `resolvedBy`(기본 `ui`) · `note`를 파일에 남기고 `GET /api/queue`로 다시 읽힌다.
  */
 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -149,15 +150,20 @@ describe('POST /api/queue/:id/resolve', () => {
     expect(body.item.id).toBe('q-0001');
     expect(body.item.kind).toBe('dispute');
     expect(body.item.resolvedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    // #130: 처리자(본문에 by 없음 → `ui`) · 메모가 응답에 있다
+    expect(body.item.resolvedBy).toBe('ui');
+    expect(body.item.note).toBe('테스트가 맞다');
 
     const list = (await (await routes.list.GET()).json()) as ReviewQueueResponse;
     expect(list.open).toBe(1);
-    expect(list.items.map((item) => [item.id, item.resolvedAt !== undefined])).toEqual([
-      ['q-0001', true],
-      ['q-0002', false],
+    expect(list.items.map((item) => [item.id, item.resolvedAt !== undefined, item.resolvedBy, item.note])).toEqual([
+      ['q-0001', true, 'ui', '테스트가 맞다'],
+      ['q-0002', false, undefined, undefined],
     ]);
     // 파일에 남았다 · 상단 바 ⚠
-    expect((await store.reviewQueue.get('q-0001'))?.resolvedAt).toBe(body.item.resolvedAt);
+    const saved = await store.reviewQueue.get('q-0001');
+    expect(saved?.resolvedAt).toBe(body.item.resolvedAt);
+    expect(saved).toMatchObject({ resolvedBy: 'ui', note: '테스트가 맞다' });
     expect(toStatusResponse(await store.status()).unconfirmed.total).toBe(before - 1);
   });
 
@@ -171,10 +177,14 @@ describe('POST /api/queue/:id/resolve', () => {
     expect((await store.reviewQueue.get('q-0001'))?.resolvedAt).toBe(first);
   });
 
-  it('빈 본문도 처리 요청이다 — q-0002 200, 이제 open 0', async () => {
+  it('빈 본문도 처리 요청이다 — q-0002 200 · resolvedBy ui · note 없음, 이제 open 0', async () => {
     const req = new NextRequest('http://127.0.0.1:4817/api/queue/q-0002/resolve', { method: 'POST' });
     const res = await routes.resolve.POST(req, ctx('q-0002'));
     expect(res.status).toBe(200);
+    const body = (await res.json()) as ResolveReviewItemResponse;
+    expect(body.item.resolvedBy).toBe('ui');
+    expect(body.item).not.toHaveProperty('note');
+    expect(await store.reviewQueue.get('q-0002')).not.toHaveProperty('note');
     expect(((await (await routes.list.GET()).json()) as ReviewQueueResponse).open).toBe(0);
     expect(toStatusResponse(await store.status()).unconfirmed.reviewQueue).toBe(0);
   });
