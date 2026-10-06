@@ -174,6 +174,8 @@ exit 0
 8. 하네스는 매 실행 `[init].tools`(개수 · MCP 개수)와 첫 턴 `cache_creation_input_tokens`를 로그에 남기고, MCP > 0 또는 캐시 생성 > 기준(20,000 — 7.2)이면 **실행을 실패로 끝낸다**(경고가 아니라). §8.6 "격리가 실제로 동작하는지 첫 슬라이스에서 직접 시험"을 1회 시험이 아니라 상시 검사로 — 격리 누수는 비용으로 즉시 드러나므로 싸게 잡을 수 있다
 9. **파일·셸 격리의 정본은 PreToolUse hook**(`path-guard.ts` · `bash-guard.ts`)이고 OS `sandbox`는 보조다. Linux에서 `bwrap`·`socat` 없이는 조용히 꺼지고(7.1), macOS에서는 켜지지만(7.2) 그래도 셸에만 적용되므로 샌드박스에 기대는 설계를 하지 않는다. 역할 옵션은 `failIfUnavailable: false`로 두고, 프로브·격리 시험이 `⚠ Sandbox disabled` 줄을 출력에 남긴다
 10. 격리 시험(`pnpm isolation-test`)은 M4 종료 증거이자 **회귀 시험**이다 — 역할 옵션 · 가드 · Stop hook을 바꾸는 PR은 이 명령의 표를 검증 증거에 붙인다(비용 ≈ $0.03/회)
+11. **(#122, 2026-10-06 승인) 실행 결과는 자동 머지하지 않는다.** ⑥ 뒤 원본 레포에 브랜치 `plumb/<run-id>`를 worktree 커밋에 만들고, 머지는 사람이 한다(git 또는 `/runs` 상세 안내). View 머리말 `commit`은 실행 커밋이고 UI는 "실행 r-nnnn 커밋(브랜치 plumb/r-nnnn) · HEAD와 다름"으로 구분해 표시한다. 기각: 자동 fast-forward(⑤ "에이전트는 승인 불가" 위배) · diff 내보내기(이력 끊김) · worktree 보존만 · GitHub PR 자동 생성(로컬 도구 원칙). 감수: 실행마다 브랜치 1개 → `plumb runs prune` 필요, 충돌은 사람 몫, 주입 커밋은 브랜치에 넣지 않는다
+12. **(#123, 2026-10-06 승인) 승인 기록은 해시 체인이다.** `approvals/<ruleId>.jsonl` 각 줄에 `prev: sha256(바로 앞 줄 원문)`(첫 줄 `null`). `store.status()`는 `rulesHash` 비교에 더해 규칙마다 체인을 다시 계산해 한 줄이라도 어긋나면 `tampered`(사유 `approval-chain-broken`, 규칙 · 줄 번호). `prev` 없는 기존 줄은 체인 시작 전으로 보고 검증하지 않는다(마이그레이션 없음). 기각: 서명(키 관리) · git 커밋 해시(저장소가 git 밖) · 외부 저장 · 파일 전체 해시 하나. 감수: 한 줄 손대면 그 뒤 전부 변조 표시 → 사람이 확인한 뒤 체인을 다시 시작하는 복구 명령이 함께 필요
 
 ## 7. 격리 시험 결과 (#79, `pnpm isolation-test`)
 
