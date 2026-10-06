@@ -5,6 +5,8 @@
  *   ② test-writer    — worktree에서 `.d.ts` 스텁 → 역할 실행(Stop `all-fail`) → 증거: 담당 파일이 있고 전부 실패 → ✔. 아니면 `stage-2-not-all-failed`
  *   ③ implementer    — 역할 실행(Stop `all-pass-or-dispute`) → 전부 통과 ✔ 또는 유효한 이의 제기 → `disputes[]`(재검토는 #88)
  *   ④ plumb check    — `runCheck()`를 worktree에 대고 돌려 규칙별 상태를 저장소에 기록. ⑤ 뒤 한 번 더 돌려 주입 결과(🟢 · 🟡)를 반영(#105)
+ *   ⑥ 뒤 브랜치      — ②③ 결과 커밋(`RunState.commits.to`)에 원본 레포 브랜치 `plumb/<run-id>`를 만들고 `RunState.branch`에 적는다(#134, 결정 #122).
+ *                      자동 머지는 없다. 주입 커밋(별도 임시 worktree)은 넣지 않는다. 실패해도 실행은 `completed`(로그만)
  * 예산(`run.maxBudgetUsd`)은 단계마다 본다. 역할의 `maxTurns` 초과(SDK `error_max_turns`) → `failed: maxTurns`.
  * 격리 누수(`isolation-leak`)와 러너 실패 → `failed: runner-error`. 연속 Stop 차단 상한 → `failed: stopBlockLimit`.
  *
@@ -41,7 +43,7 @@ import {
   type InjectOnceResult,
 } from './inject.js';
 import { newRunState, RunRecorder } from './state.js';
-import { commitWorktree, createWorktree, type Worktree } from './worktree.js';
+import { commitWorktree, createRunBranch, createWorktree, runBranchName, type Worktree } from './worktree.js';
 
 export class RunPreconditionError extends Error {
   constructor(
@@ -463,6 +465,20 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
     const queued = (await deps.store.reviewQueue.list()).filter((q) => q.runId === runId).length;
     await rec.finishStage({ stage: 6, viewsUpdated, queued });
     log(`[stage 6] views ${viewsUpdated}/${views.length} · 검토 대기열 ${queued}`);
+
+    // ⑥ 뒤 병합 게이트(#134, 결정 #122): ②③ 결과 커밋에 원본 레포 브랜치 `plumb/<run-id>`. 커밋이 없으면(역할이 아무것도 안 바꿈) 없다.
+    // ref 하나뿐이라 실패해도 실행 결과는 그대로 — 로그만 남기고 completed. 자동 머지는 하지 않는다
+    const commits = rec.current.commits;
+    if (worktree && commits) {
+      const name = runBranchName(runId);
+      try {
+        const made = await createRunBranch(origServiceRoot, name, commits.to);
+        await rec.setBranch(made.name);
+        log(`[branch] ${made.name} @ ${made.sha.slice(0, 7)} (git merge ${made.name})`);
+      } catch (error) {
+        log(`[branch] 실패: ${(error as Error).message ?? String(error)}`);
+      }
+    }
     return { state: await rec.complete(), worktree };
   } catch (error) {
     const msg = (error as Error).message ?? String(error);

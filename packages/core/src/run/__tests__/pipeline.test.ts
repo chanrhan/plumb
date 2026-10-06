@@ -1,6 +1,8 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Adapter, TestRunResult } from '../../adapter/types.js';
 import type { RunCheckResult } from '../../checks/run-check.js';
@@ -476,5 +478,139 @@ describe('runPipeline (SDK · 검사는 가짜)', () => {
     });
     expect(state.stages.map((s) => s.stage)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(state.stages[4]?.result).toMatchObject({ stage: 5, injections: 1, caught: 0, weak: false });
+  });
+
+  // -------------------------------------------------------------------------
+  // 병합 게이트 ① (#134, 결정 #122): ⑥ 뒤 원본 레포에 브랜치 plumb/<run-id>. 임시 git 레포 + 가짜 worktree(레포 자체)
+  // -------------------------------------------------------------------------
+  describe('⑥ 뒤 브랜치 plumb/<run-id> (임시 git 레포)', () => {
+    const exec = promisify(execFile);
+    const ID = ['-c', 'user.name=t', '-c', 'user.email=t@t'];
+    const sh = async (cwd: string, args: string[]) => (await exec('git', [...ID, ...args], { cwd })).stdout.trim();
+    /** 서비스 레포: 루트 `dir/service`, 커밋 하나, `.work/`는 gitignore(역할 작업 디렉토리가 worktree 안에 생기므로) */
+    async function initRepo(name: string): Promise<string> {
+      const repo = join(dir, name);
+      await mkdir(repo, { recursive: true });
+      await writeFile(join(repo, 'package.json'), '{}');
+      await writeFile(join(repo, '.gitignore'), '.work\n');
+      await exec('git', ['init', '-q', '-b', 'main', repo]);
+      await sh(repo, ['add', '-A']);
+      await sh(repo, ['commit', '-q', '-m', 'init']);
+      // 실제 worktree처럼 detached — main은 움직이지 않는다
+      await sh(repo, ['checkout', '-q', '--detach']);
+      return repo;
+    }
+    /** createWorktree 대신: 주어진 레포 자체를 worktree로 쓴다 (inject.test와 같은 방식) */
+    const fakeWorktree = (repo: string) => async () => ({
+      repoRoot: repo,
+      serviceRoot: repo,
+      commit: 'abc1234def',
+      linkedNodeModules: [],
+    });
+    /** 역할이 cwd에 파일을 남긴다 → ⑤ 전 commitWorktree가 커밋한다 */
+    const writingRole = async (input: RunRoleInput): Promise<RoleRunResult> => {
+      await writeFile(join(input.options.cwd ?? dir, 'impl.ts'), 'export const DAYS = 7;\n');
+      return okRole();
+    };
+    const serviceConfig = { ...config, service: 'service' };
+
+    it('②③ 커밋이 있으면 원본 레포에 plumb/<run-id>를 그 커밋에 만들고 RunState.branch에 적는다 — main은 그대로(자동 머지 없음)', async () => {
+      await approveRule();
+      const repo = await initRepo('service');
+      const main = await sh(repo, ['rev-parse', 'main']);
+      const { adapter } = fakeAdapter(dir, [
+        [1, 0],
+        [0, 1],
+      ]);
+      const logs: string[] = [];
+      const { state } = await runPipeline({
+        config: serviceConfig,
+        root: dir,
+        store,
+        adapter,
+        ruleIds: [RULE.id],
+        runId: 'r-0007',
+        runRole: writingRole,
+        runCheck: fakeCheck,
+        injectOnce: fakeInject().injectOnce,
+        generateViews: fakeViews,
+        createWorktree: fakeWorktree(repo),
+        heartbeatMs: 0,
+        log: (l) => void logs.push(l),
+      });
+      expect(state.status).toBe('completed');
+      expect(state.commits).toBeDefined();
+      expect(state.branch).toBe('plumb/r-0007');
+      expect(await sh(repo, ['branch', '--list', 'plumb/*', '--format=%(refname:short)'])).toBe('plumb/r-0007');
+      expect(await sh(repo, ['rev-parse', 'refs/heads/plumb/r-0007'])).toBe(state.commits?.to);
+      expect(await sh(repo, ['rev-parse', 'main'])).toBe(main);
+      // 상태 파일에도 적혔다 — UI · `plumb runs show`는 이것만 읽는다
+      expect((await store.runs.get('r-0007'))?.branch).toBe('plumb/r-0007');
+      expect(logs.some((l) => /^\[branch\] plumb\/r-0007 @ [0-9a-f]{7} \(git merge plumb\/r-0007\)$/.test(l))).toBe(
+        true,
+      );
+    });
+
+    it('브랜치를 못 만들어도 실행은 completed — branch 없음 + [branch] 실패 로그', async () => {
+      await approveRule();
+      await initRepo('service');
+      // worktree가 다른 객체 저장소(별개 레포)라 커밋이 원본에 없다 → git branch 실패
+      const other = await initRepo('other');
+      const { adapter } = fakeAdapter(dir, [
+        [1, 0],
+        [0, 1],
+      ]);
+      const logs: string[] = [];
+      const { state } = await runPipeline({
+        config: serviceConfig,
+        root: dir,
+        store,
+        adapter,
+        ruleIds: [RULE.id],
+        runId: 'r-0008',
+        runRole: writingRole,
+        runCheck: fakeCheck,
+        injectOnce: fakeInject().injectOnce,
+        generateViews: fakeViews,
+        createWorktree: fakeWorktree(other),
+        heartbeatMs: 0,
+        log: (l) => void logs.push(l),
+      });
+      expect(state.status).toBe('completed');
+      expect(state.commits).toBeDefined();
+      expect(state.branch).toBeUndefined();
+      expect(logs.some((l) => l.startsWith('[branch] 실패: '))).toBe(true);
+      expect(await sh(join(dir, 'service'), ['branch', '--list', 'plumb/*', '--format=%(refname:short)'])).toBe('');
+    });
+
+    it('역할이 아무것도 바꾸지 않아 커밋이 없으면 브랜치도 없다', async () => {
+      await approveRule();
+      const repo = await initRepo('service');
+      const { adapter } = fakeAdapter(dir, [
+        [1, 0],
+        [0, 1],
+      ]);
+      const logs: string[] = [];
+      const { state } = await runPipeline({
+        config: serviceConfig,
+        root: dir,
+        store,
+        adapter,
+        ruleIds: [RULE.id],
+        runId: 'r-0009',
+        runRole: async () => okRole(),
+        runCheck: fakeCheck,
+        injectOnce: fakeInject().injectOnce,
+        generateViews: fakeViews,
+        createWorktree: fakeWorktree(repo),
+        heartbeatMs: 0,
+        log: (l) => void logs.push(l),
+      });
+      expect(state.status).toBe('completed');
+      expect(state.commits).toBeUndefined();
+      expect(state.branch).toBeUndefined();
+      expect(logs.some((l) => l.startsWith('[branch]'))).toBe(false);
+      expect(await sh(repo, ['branch', '--list', 'plumb/*', '--format=%(refname:short)'])).toBe('');
+    });
   });
 });

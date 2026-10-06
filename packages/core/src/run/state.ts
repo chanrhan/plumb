@@ -159,6 +159,12 @@ export class RunRecorder {
     return this.persist();
   }
 
+  /** ⑥ 뒤 원본 레포에 만든 브랜치 `plumb/<run-id>` (`RunState.branch`, 결정 #122). 못 만들었으면 부르지 않는다 */
+  async setBranch(branch: string): Promise<RunState> {
+    this.state = { ...this.state, branch };
+    return this.persist();
+  }
+
   async setCapturedOutput(captured: CapturedOutput): Promise<RunState> {
     this.state = { ...this.state, capturedOutput: captured };
     return this.persist();
