@@ -22,6 +22,7 @@
 | M6 | 완료 | #86~#89 + #94 머지. 로컬 r-0001: `plumb run --detach` → ①②③④ 완주(103초 · $0.29), 이의 제기 → 재검토 `test-wrong`(alias 원인 → #99). UI `/runs` #107 |
 | M7 | 완료 | #90 injector · #91 차이 탐색. 로컬 `r-0003` 단계 ⑤에서 주입 1 · 잡힘 1, `injections/pay.refund-window/i-0001.json` valid=true (2026-10-05, `docs/first-slice.md` 3.1) |
 | M9 | 완료 | §15.1 다섯 항목 ✔ — `pnpm first-slice-check` 5/5(로컬 `r-0003`, 100초 · $0.32) + ④ 화면만으로 승인→실행→View(`r-0004`) · 대조표 `docs/screens/compare.md`(M10 후보 27개). `docs/first-slice.md` 3절 |
+| M10 | wave 1 진행 | #120 #121 #126 #130 머지(검토 대기열 · 블록 트리) · #119 두 번째 슬라이스 로컬 실행 대기 · 결정 #122(병합 게이트) · #123(해시 체인) 사용자 확인 대기 |
 | M8 | #63 · #67만 남음 | View 6개 생성기 + `plumb views` + UI `/views`(Markdown·Mermaid, `plumb://open` 점프) 완료. testbed에서 `plumb check --views` → 12 파일. 흐름도는 spike 결과 A안(트레이스 + 정적) — 결정 #67 사람 확인 대기. #63 타입 보완 진행 중 |
 
 ## 마일스톤
@@ -164,12 +165,15 @@ wave = 동시에 돌릴 수 있는 이슈 묶음. wave 안의 이슈는 범위�
 | wave | 이슈 | 단계 | 내용 |
 |---|---|---|---|
 | 1 | #119 | 슬라이스 반복 | 두 번째 규칙 `auth.session-expiry`(auth · DB 없음 · 기존 구현 없음) 제안→승인→실행→🟢 — `env/local`, PR #124 준비 |
-| 1 | #120 | 작업 화면 | 검토 대기열 `/queue` — 목록 · 처리(resolve) · `GET /api/queue` · `POST /api/queue/:id/resolve` (`parallel/ok`) |
-| 1 | #121 | 작업 화면 | 블록 트리 사이드바 + `GET /api/blocks` — 최악 상태 점 · 미분류 수 (`parallel/ok`) |
+| 1 | #120 | 작업 화면 | 검토 대기열 `/queue` — 목록 · 처리(resolve) · `GET /api/queue` · `POST /api/queue/:id/resolve` — **머지** (PR #127) |
+| 1 | #130 | 작업 화면 | #120 후속 — middleware `/queue` · 처리자 `resolvedBy` · 메모 `note` 기록 — **머지** (PR #131) |
+| 1 | #121 | 작업 화면 | 블록 트리 사이드바 + `GET /api/blocks` — 최악 상태 점(🔴 > 🟠 > 🟡 > 🟢 > ⬜) · 미분류 수 — **머지** (PR #129) |
+| 1 | #126 | — | (버그) adapter 실행 테스트가 testbed 파일 수를 상수로 고정 → 디렉토리에서 직접 셈 — **머지** (PR #128) |
 | 1 | #122 | 병합 게이트 | **결정** 실행 결과 반영 — worktree 커밋을 브랜치 `plumb/<run-id>`로, 사람이 머지. View "HEAD와 다름" 표시 구분 |
 | 1 | #123 | 해시 체인 | **결정** 승인 기록 줄마다 `prev` 해시, `status()`가 체인 검증 |
 | 2 | — | `plumb init` 일반화 | testbed 밖 Next.js 레포에서 init→propose→approve→run (두 번째 슬라이스 뒤) |
 | 2 | — | 승인 모델 | 결정 단위 승인(M10-03) · 대기열 상한 시 제안 중단(M10-06) · 복수 규칙 동시 실행(M10-08) |
+| 2 | — | 작업 화면 | `/queue` 처리 메모 입력칸(화면 설계: work-approve 4절 방식) · 판정 결과 → 규칙 상태 🟠 연결(M10-17) · `/rules` 머리 탭 자리 |
 | 2 | — | 구현 | #122 · #123 결정 뒤 구현 이슈 |
 
 ## 이슈 등록 시점
