@@ -47,16 +47,21 @@ describe('lib/auth', () => {
 });
 
 describe('middleware — /api/**', () => {
-  it('matcher 는 /api/** 와 /views · /rules · /runs 를 덮고 /auth · /no-session 은 밖이다', () => {
+  it('matcher 는 /api/** 와 /views · /rules · /runs · /queue 를 덮고 /auth · /no-session 은 밖이다', () => {
     expect(config.matcher).toEqual([
       '/api/:path*',
       '/views/:path*',
       '/rules/:path*',
       '/runs/:path*',
+      '/queue/:path*',
       '/views',
       '/rules',
       '/runs',
+      '/queue',
     ]);
+    // #130: /queue 가 /rules · /runs 와 같은 보호를 받는다 (페이지 · 하위 경로 둘 다)
+    expect(config.matcher).toContain('/queue');
+    expect(config.matcher).toContain('/queue/:path*');
     expect(config.matcher.some((m) => m.startsWith('/auth'))).toBe(false);
     expect(config.matcher.some((m) => m.startsWith('/no-session'))).toBe(false);
   });
@@ -91,8 +96,8 @@ describe('middleware — /api/**', () => {
 });
 
 describe('middleware — 페이지', () => {
-  it('쿠키 없는 /views · /rules · /runs 는 /no-session 으로 rewrite (쿼리는 버린다)', async () => {
-    for (const path of ['/views?view=flow', '/rules/pay.refund-window', '/runs']) {
+  it('쿠키 없는 /views · /rules · /runs · /queue 는 /no-session 으로 rewrite (쿼리는 버린다)', async () => {
+    for (const path of ['/views?view=flow', '/rules/pay.refund-window', '/runs', '/queue', '/queue?show=resolved']) {
       const response = await middleware(request(path));
       const rewrite = new URL(response.headers.get('x-middleware-rewrite') ?? '');
       expect(rewrite.pathname).toBe('/no-session');
@@ -102,8 +107,10 @@ describe('middleware — 페이지', () => {
   });
 
   it('맞는 쿠키면 통과', async () => {
-    const response = await middleware(request('/rules', HASH));
-    expect(response.headers.get('x-middleware-next')).toBe('1');
+    for (const path of ['/rules', '/queue']) {
+      const response = await middleware(request(path, HASH));
+      expect(response.headers.get('x-middleware-next')).toBe('1');
+    }
   });
 });
 

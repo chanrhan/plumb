@@ -1,6 +1,6 @@
 /**
  * `/queue` 화면과 검토 대기열 API가 공유하는 서버 쪽 읽기 · 처리 모델 (이슈 #120, 기획안 §9.2 · §6.4, compare 13절 M10-07).
- * 값은 전부 저장소의 `review-queue/*.json`에서 온다 — 목 데이터 없음. 쓰기는 `store.reviewQueue.resolve` 하나뿐이고 그것도 `resolvedAt`만 찍는다.
+ * 값은 전부 저장소의 `review-queue/*.json`에서 온다 — 목 데이터 없음. 쓰기는 `store.reviewQueue.resolve` 하나뿐 — `resolvedAt` · `resolvedBy` · `note`(#130).
  *
  * - `readReviewQueue()`: 항목 전부(생성 순) + 열린 수. 열린 것만 보이는 기본 · "처리됨 보기"는 `applyReviewQueueFilter`가 거른다
  * - `resolveReviewQueueItem(id, body)`: 없는 id → 404 `review-item-not-found`, 이미 처리 → 409 `review-item-resolved`(이미 처리된 항목을 같이 준다 —
