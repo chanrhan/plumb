@@ -5,7 +5,8 @@
  * 모든 `/api/**`는 토큰 쿠키를 요구한다 (README 3.2). 없거나 틀리면 401 ({@link ApiError}).
  * 쓰기 API(approve · reject · runs · abort · open · regenerate)는 에이전트가 쿠키 없이 부르면 401 — 기획안 §15.1 "에이전트는 승인할 수 없다".
  *
- * 추가된 경로: `POST /api/runs/:id/abort` (work-run 6절 2번), `POST /api/views/regenerate` (view-architecture 4절, 이슈 코멘트).
+ * 추가된 경로: `POST /api/runs/:id/abort` (work-run 6절 2번), `POST /api/views/regenerate` (view-architecture 4절, 이슈 코멘트),
+ * `GET /api/queue` · `POST /api/queue/:id/resolve` (검토 대기열 화면 `/queue`, #120 · compare 13절 M10-07).
  */
 
 import type {
@@ -17,6 +18,8 @@ import type {
   DecisionRecord,
   Proposal,
   ProposalId,
+  ReviewQueueItem,
+  ReviewQueueItemId,
   Rule,
   RuleId,
   RuleKind,
@@ -49,16 +52,19 @@ export type ApiError =
     }
   | {
       status: 404;
-      code: 'view-not-found' | 'rule-not-found' | 'run-not-found' | 'proposal-not-found';
+      /** `review-item-not-found`: 검토 대기열에 그 id가 없다 (#120) */
+      code: 'view-not-found' | 'rule-not-found' | 'run-not-found' | 'proposal-not-found' | 'review-item-not-found';
       message: string;
       /** `view-not-found`일 때: 여섯 이름이 아님(`unknown-view`) vs 아직 생성 안 됨(`not-generated` → 탭 비활성) (#71) */
       reason?: 'unknown-view' | 'not-generated';
     }
   | {
       status: 409;
-      /** `proposal-changed`: 화면을 연 뒤 제안이 바뀜(재제안 · CLI 승인) → 다시 읽기 (work-approve 4절) · `run-in-progress`: 동시 실행 1개 (work-run 6절 1번) · `run-finished`: 이미 끝난 실행에 abort · `store-tampered`: 변조 증거 상태에서는 승인하지 않는다 (M10) */
-      code: 'proposal-changed' | 'run-in-progress' | 'run-finished' | 'store-tampered' | 'regenerate-in-progress';
+      /** `proposal-changed`: 화면을 연 뒤 제안이 바뀜(재제안 · CLI 승인) → 다시 읽기 (work-approve 4절) · `run-in-progress`: 동시 실행 1개 (work-run 6절 1번) · `run-finished`: 이미 끝난 실행에 abort · `store-tampered`: 변조 증거 상태에서는 승인하지 않는다 (M10) · `review-item-resolved`: 화면을 연 뒤 이미 처리된 검토 대기열 항목 → 다시 읽기 (#120) */
+      code: 'proposal-changed' | 'run-in-progress' | 'run-finished' | 'store-tampered' | 'regenerate-in-progress' | 'review-item-resolved';
       message: string;
+      /** `review-item-resolved`일 때 이미 처리된 항목 (resolvedAt 포함) */
+      item?: ReviewQueueItem;
       /** `run-in-progress`일 때 진행 중인 실행 */
       runId?: RunId;
     }
@@ -327,6 +333,41 @@ export interface RegenerateViewsResponse {
 export type RegenerateViewsError = Extract<ApiError, { status: 401 | 404 | 409 | 500 }>;
 
 // ---------------------------------------------------------------------------
+// GET /api/queue · POST /api/queue/:id/resolve — 검토 대기열 화면 `/queue` (#120, 기획안 §9.2, compare 13절 M10-07)
+// ---------------------------------------------------------------------------
+
+/**
+ * 저장소: `review-queue/*.json` 전부 (생성 순). 열린 것만 보이는 기본 · "처리됨 보기" 토글은 화면이 `resolvedAt`으로 거른다.
+ * `open` = `resolvedAt` 없는 항목 수 = 상단 바 `⚠ n`의 검토 대기열 몫 (`StatusResponse.unconfirmed.reviewQueue`)
+ */
+export interface ReviewQueueResponse {
+  items: ReviewQueueItem[];
+  open: number;
+}
+
+/** `[처리]`. `by`는 없으면 서버가 `ui`로 적는다 (승인의 `Approval.by`와 같은 통로 표시). `note`는 처리 메모 한 줄 */
+export interface ResolveReviewItemRequest {
+  by?: string;
+  note?: string;
+}
+
+/** 200. `item.resolvedAt`이 찍혀 돌아온다. 상단 바 `⚠ n`은 다시 읽어 갱신한다 */
+export interface ResolveReviewItemResponse {
+  item: ReviewQueueItem & { resolvedAt: string };
+}
+
+/** 오류: 401 · 400(invalid-body) · 404(review-item-not-found) · 409(review-item-resolved: 이미 처리됨 → 다시 읽기) */
+export type ResolveReviewItemError = Extract<ApiError, { status: 401 | 400 | 404 | 409 }>;
+
+/** `/queue` URL 쿼리. 기본은 열린 것만 (기획안 §6.4 "쌓였을 때 비우는 화면") */
+export interface ReviewQueueFilter {
+  /** `?show=resolved` — 처리된 것도 보인다 */
+  show?: 'resolved';
+  /** 선택한 항목 (`/queue?id=`) */
+  id?: ReviewQueueItemId;
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/open — 코드 열람 점프 (README 2.2, work-views 4절)
 // ---------------------------------------------------------------------------
 
@@ -368,4 +409,6 @@ export interface ApiSurface {
   'GET /api/views/:name': { response: ViewResponse; error: ViewError };
   'POST /api/views/regenerate': { request: RegenerateViewsRequest; response: RegenerateViewsResponse; error: RegenerateViewsError };
   'POST /api/open': { request: CodeOpenRequest; response: CodeOpenResponse; error: CodeOpenError };
+  'GET /api/queue': { response: ReviewQueueResponse; error: Extract<ApiError, { status: 401 }> };
+  'POST /api/queue/:id/resolve': { request: ResolveReviewItemRequest; response: ResolveReviewItemResponse; error: ResolveReviewItemError };
 }
