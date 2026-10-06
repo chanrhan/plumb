@@ -85,6 +85,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <Link href="/rules">/rules</Link>
             <span>·</span>
             <Link href="/runs">/runs</Link>
+            <span>·</span>
+            <Link href="/queue">검토 대기열</Link>
           </nav>
         </div>
       </body>
