@@ -6,6 +6,7 @@
  *    그래프 JSON은 `examples/testbed/reports/block-graph.json`에 쓴다 (gitignore).
  */
 
+import { readdirSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -27,6 +28,19 @@ import {
 import { nextjsAdapter } from '../index.js';
 
 const TESTBED = fileURLToPath(new URL('../../../../examples/testbed/', import.meta.url)).replace(/\/$/, '');
+
+/**
+ * testbed 블록의 소스 파일 수를 디렉토리에서 직접 센다 (`.ts` · `.tsx`, `__tests__` 제외 — depcruise 설정과 같은 기준).
+ * 상수로 박으면 testbed에 파일이 늘 때마다 깨진다 (#126 — #119가 auth에 파일 2개를 더했다)
+ */
+function countBlockFiles(rel: string): number {
+  const walk = (dir: string): number =>
+    readdirSync(dir, { withFileTypes: true }).reduce((n, entry) => {
+      if (entry.isDirectory()) return entry.name === '__tests__' ? n : n + walk(join(dir, entry.name));
+      return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? n + 1 : n;
+    }, 0);
+  return walk(join(TESTBED, rel));
+}
 
 const baseConfig: PlumbConfig = {
   service: 'synthetic',
@@ -391,7 +405,7 @@ describe('extractDependencies — examples/testbed 실제 실행', () => {
       kind: 'domain',
       paths: ['src/domains/payment/**'],
       public: ['src/domains/payment/index.ts'],
-      files: 4, // index · payment · repo · types (__tests__는 depcruise 설정에서 제외)
+      files: countBlockFiles('src/domains/payment'), // index · payment · repo · types (__tests__는 depcruise 설정에서 제외)
       declared: true,
       risk: 'high',
     });
@@ -401,7 +415,7 @@ describe('extractDependencies — examples/testbed 실제 실행', () => {
       kind: 'domain',
       paths: ['src/domains/auth/**'],
       public: ['src/domains/auth/index.ts'],
-      files: 1,
+      files: countBlockFiles('src/domains/auth'),
       declared: true,
     });
     expect(byId.app).toEqual({
@@ -410,7 +424,7 @@ describe('extractDependencies — examples/testbed 실제 실행', () => {
       kind: 'entry',
       paths: ['src/app/**'],
       public: [],
-      files: 4, // api/payments/route · api/refunds/route · layout · page
+      files: countBlockFiles('src/app'), // api/payments/route · api/refunds/route · layout · page
       declared: false,
     });
     expect(byId.lib).toEqual({
@@ -419,7 +433,7 @@ describe('extractDependencies — examples/testbed 실제 실행', () => {
       kind: 'domain',
       paths: ['src/lib/**'],
       public: ['src/lib/http.ts', 'src/lib/payment-contract.ts'],
-      files: 2,
+      files: countBlockFiles('src/lib'),
       declared: false,
       shared: true,
     });
