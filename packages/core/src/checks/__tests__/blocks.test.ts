@@ -1,12 +1,12 @@
 /**
- * 이슈 #121 "완료 증거": 블록 트리 응답 — worstStatus 우선순위(🔴 > 🟠 > 🟡 > ⬜ > 🟢) · 규칙 없는 블록 `null` · 그래프 없음(`no-graph`) ·
+ * 이슈 #121 "완료 증거": 블록 트리 응답 — worstStatus 우선순위(🔴 > 🟠 > 🟡 > 🟢 > ⬜, README 2절 · STATUS_SEVERITY와 같다) · 규칙 없는 블록 `null` · 그래프 없음(`no-graph`) ·
  * 규칙에만 있는 블록 · `paths` · `public` · `files`의 출처(그래프 → config).
  */
 
 import { describe, expect, it } from 'vitest';
 import type { BlockConfig } from '../../types/index.js';
-import { BLOCK_DOT_ORDER, computeBlocksResponse, worstBlockStatus } from '../blocks.js';
-import { emptyStatusCounts } from '../summary.js';
+import { computeBlocksResponse, worstOfCounts } from '../blocks.js';
+import { emptyStatusCounts, STATUS_SEVERITY } from '../summary.js';
 import { block, graph, record, rule } from './fixtures.js';
 
 const CONFIG_BLOCKS: Record<string, BlockConfig> = {
@@ -19,15 +19,15 @@ const view = () => {
   return { blocks: g.blocks, unclassified: g.unclassified };
 };
 
-describe('worstBlockStatus', () => {
-  it('🔴 > 🟠 > 🟡 > ⬜ > 🟢 — 검사 안 된 규칙이 있으면 블록은 유효(🟢)로 보이지 않는다', () => {
-    expect(BLOCK_DOT_ORDER).toEqual(['fail', 'recheck', 'pass-unverified', 'unchecked', 'pass-verified']);
-    expect(worstBlockStatus(emptyStatusCounts())).toBeNull();
-    expect(worstBlockStatus({ ...emptyStatusCounts(), 'pass-verified': 2 })).toBe('pass-verified');
-    expect(worstBlockStatus({ ...emptyStatusCounts(), 'pass-verified': 2, unchecked: 1 })).toBe('unchecked');
-    expect(worstBlockStatus({ ...emptyStatusCounts(), unchecked: 1, 'pass-unverified': 1 })).toBe('pass-unverified');
-    expect(worstBlockStatus({ ...emptyStatusCounts(), 'pass-unverified': 1, recheck: 1 })).toBe('recheck');
-    expect(worstBlockStatus({ ...emptyStatusCounts(), recheck: 3, fail: 1, 'pass-verified': 9 })).toBe('fail');
+describe('worstOfCounts', () => {
+  it('🔴 > 🟠 > 🟡 > 🟢 > ⬜ — 검증 View 블록 머리글 집계(STATUS_SEVERITY)와 같은 순위', () => {
+    expect(STATUS_SEVERITY['pass-verified']).toBeGreaterThan(STATUS_SEVERITY.unchecked);
+    expect(worstOfCounts(emptyStatusCounts())).toBeNull();
+    expect(worstOfCounts({ ...emptyStatusCounts(), unchecked: 2 })).toBe('unchecked');
+    expect(worstOfCounts({ ...emptyStatusCounts(), 'pass-verified': 2, unchecked: 1 })).toBe('pass-verified');
+    expect(worstOfCounts({ ...emptyStatusCounts(), 'pass-verified': 1, 'pass-unverified': 1 })).toBe('pass-unverified');
+    expect(worstOfCounts({ ...emptyStatusCounts(), 'pass-unverified': 1, recheck: 1 })).toBe('recheck');
+    expect(worstOfCounts({ ...emptyStatusCounts(), recheck: 3, fail: 1, 'pass-verified': 9 })).toBe('fail');
   });
 });
 
@@ -59,7 +59,7 @@ describe('computeBlocksResponse', () => {
     expect(response.blocks[1]?.risk).toBeUndefined();
   });
 
-  it('상태 점은 블록 규칙들의 최악: 🟢 둘 + ⬜ 하나 → ⬜, 🟡 + 🔴 → 🔴, 🟡 + 🟠 → 🟠', () => {
+  it('상태 점은 블록 규칙들의 최악: 🟢 둘 + ⬜ 하나 → 🟢, 🟡 + 🔴 → 🔴, 🟡 + 🟠 → 🟠', () => {
     const response = computeBlocksResponse({
       config: { blocks: { ...CONFIG_BLOCKS, billing: { include: ['src/domains/billing/**'] } } },
       rules: [
@@ -83,7 +83,7 @@ describe('computeBlocksResponse', () => {
       graph: view(),
     });
     expect(response.blocks.map((b) => [b.id, b.worstStatus, b.rules])).toEqual([
-      ['payment', 'unchecked', 3],
+      ['payment', 'pass-verified', 3],
       ['auth', 'fail', 2],
       ['billing', 'recheck', 2],
     ]);
