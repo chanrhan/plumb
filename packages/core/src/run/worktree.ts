@@ -142,3 +142,121 @@ export async function commitWorktree(
   const to = await git(wt.repoRoot, ['rev-parse', 'HEAD']);
   return { from, to };
 }
+
+// ---------------------------------------------------------------------------
+// 병합 게이트 — 브랜치 `plumb/<run-id>` (결정 #122, 이슈 #134)
+// ---------------------------------------------------------------------------
+
+/** 실행 결과 브랜치 접두어. `plumb runs prune`은 이 접두어의 브랜치만 본다 */
+export const RUN_BRANCH_PREFIX = 'plumb/';
+
+export function runBranchName(runId: string): string {
+  return `${RUN_BRANCH_PREFIX}${runId}`;
+}
+
+async function branchExists(top: string, name: string): Promise<boolean> {
+  try {
+    await git(top, ['show-ref', '--verify', '--quiet', `refs/heads/${name}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 원본 서비스 레포에 브랜치 `name`을 `sha`에 만든다 — worktree 커밋은 같은 객체 저장소에 이미 있으므로 ref 하나만 더 만든다.
+ * 이미 있으면(같은 run-id 재실행) `git branch -f`로 옮긴다. 자동 머지는 하지 않는다 — 머지는 사람 몫(`git merge <name>`).
+ * 실패(객체 없음 · 이름 충돌 등)는 예외로 — 호출자(파이프라인)는 로그만 남기고 실행은 `completed`로 끝낸다
+ */
+export async function createRunBranch(
+  serviceRoot: string,
+  name: string,
+  sha: string,
+): Promise<{ name: string; sha: string }> {
+  const top = await gitToplevel(serviceRoot);
+  const args = (await branchExists(top, name)) ? ['branch', '-f', name, sha] : ['branch', name, sha];
+  await git(top, args);
+  return { name, sha: await git(top, ['rev-parse', `refs/heads/${name}`]) };
+}
+
+export interface RunBranch {
+  name: string;
+  sha: string;
+  /** 브랜치 끝 커밋의 committer 시각(ISO). `--older-than`의 기준 */
+  committedAt: string;
+  /** `git branch --merged HEAD`에 들어 있는가 */
+  merged: boolean;
+}
+
+/** 원본 레포의 `plumb/*` 브랜치 전부(머지 여부 포함). 이름 순 */
+export async function listRunBranches(serviceRoot: string): Promise<RunBranch[]> {
+  const top = await gitToplevel(serviceRoot);
+  const merged = new Set(
+    (await git(top, ['branch', '--merged', 'HEAD', '--list', `${RUN_BRANCH_PREFIX}*`, '--format=%(refname:short)']))
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0),
+  );
+  const raw = await git(top, [
+    'for-each-ref',
+    '--format=%(refname:short)%00%(objectname)%00%(committerdate:iso-strict)',
+    `refs/heads/${RUN_BRANCH_PREFIX}`,
+  ]);
+  return raw
+    .split('\n')
+    .filter((l) => l.length > 0)
+    .map((l) => {
+      const [name = '', sha = '', committedAt = ''] = l.split('\0');
+      return { name, sha, committedAt, merged: merged.has(name) };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export interface PruneRunBranchesInput {
+  serviceRoot: string;
+  /** `git branch --merged HEAD`에 든 브랜치를 지운다. `olderThanDays`도 없으면 이것이 기본 — 머지 안 된 결과를 말없이 버리지 않는다 */
+  merged?: boolean;
+  /** 끝 커밋이 N일보다 오래된 브랜치를 지운다(머지 여부 무관) */
+  olderThanDays?: number;
+  /** 지우지 않고 대상만 */
+  dryRun?: boolean;
+  now?: () => Date;
+}
+
+export interface PrunedBranch extends RunBranch {
+  reason: 'merged' | 'older-than';
+  /** dry-run이면 false. 삭제 실패면 false + `error` */
+  deleted: boolean;
+  error?: string;
+}
+
+/**
+ * `plumb runs prune` 본체. 조건(머지됨 **또는** N일 지남)에 맞는 `plumb/*` 브랜치를 `git branch -D`로 지운다.
+ * 머지되지 않은 브랜치는 `olderThanDays`에만 걸린다 — 결과를 버리는 쪽은 사용자가 고른 것이어야 한다
+ */
+export async function pruneRunBranches(input: PruneRunBranchesInput): Promise<PrunedBranch[]> {
+  const top = await gitToplevel(input.serviceRoot);
+  const useMerged = input.merged === true || input.olderThanDays === undefined;
+  const nowMs = (input.now ?? (() => new Date()))().getTime();
+  const out: PrunedBranch[] = [];
+  for (const b of await listRunBranches(input.serviceRoot)) {
+    let reason: PrunedBranch['reason'] | undefined;
+    if (useMerged && b.merged) reason = 'merged';
+    else if (input.olderThanDays !== undefined) {
+      const at = Date.parse(b.committedAt);
+      if (!Number.isNaN(at) && nowMs - at >= input.olderThanDays * 86_400_000) reason = 'older-than';
+    }
+    if (reason === undefined) continue;
+    if (input.dryRun) {
+      out.push({ ...b, reason, deleted: false });
+      continue;
+    }
+    try {
+      await git(top, ['branch', '-D', b.name]);
+      out.push({ ...b, reason, deleted: true });
+    } catch (error) {
+      out.push({ ...b, reason, deleted: false, error: (error as Error).message ?? String(error) });
+    }
+  }
+  return out;
+}

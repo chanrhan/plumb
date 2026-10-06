@@ -4,6 +4,7 @@
  *   plumb run --rules <id...> [--detach]   파이프라인(#86) 실행. `--detach`면 자기 자신을 분리된 자식으로 띄우고 `{ "id" }`만 출력
  *   plumb run --rules … --child <r-id>     (내부) 분리된 자식의 진입. SIGTERM이면 상태 파일에 `aborted`를 쓰고 끝낸다
  *   plumb runs list | show <r-id> | abort <r-id>
+ *   plumb runs prune [--merged] [--older-than <days>] [--dry-run]   `plumb/*` 브랜치 정리(#134, 결정 #122). 자동 머지는 없다
  *
  * 종료 코드: 0 성공 · 1 실행 실패(failed · budget-exceeded · aborted) · 2 입력(규칙 없음 · 미승인 · 예산 상한 없음) · 3 진행 중인 실행 있음 / 끝난 실행 abort
  * (`types/api.ts`의 400 · 409 코드와 같은 이름 — UI 서버(#89)가 그대로 매핑한다)
@@ -11,7 +12,7 @@
 
 import { spawn } from 'node:child_process';
 import { mkdir, open } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { Command } from 'commander';
 import { loadAdapter as defaultLoadAdapter } from '../../adapter/load.js';
 import {
@@ -21,6 +22,7 @@ import {
   RunPreconditionError,
 } from '../../run/pipeline.js';
 import { newRunState } from '../../run/state.js';
+import { type PrunedBranch, pruneRunBranches } from '../../run/worktree.js';
 import type { RuleId, RunId, RunState, RunSummary } from '../../types/index.js';
 import {
   type CliContext,
@@ -277,6 +279,7 @@ export function runShowText(state: RunState): string {
     `${state.id} · ${STATUS_LABEL[state.status]} · 단계 ${state.stage} · pid ${state.pid}`,
     `규칙: ${state.ruleIds.join(', ')} · 시작 ${state.startedAt} · 갱신 ${state.updatedAt}${state.finishedAt ? ` · 종료 ${state.finishedAt}` : ''}`,
     `비용 ${state.costUsd === null ? '—' : `$${state.costUsd.toFixed(4)}`} / $${state.limits.maxBudgetUsd}${state.worktree ? ` · worktree ${state.worktree}` : ''}`,
+    ...(state.branch ? [`브랜치 ${state.branch} (git merge ${state.branch})`] : []),
     ...state.stages.map(
       (s) =>
         `  ${s.finishedAt ? '✔' : '●'} ${s.stage}${s.attempt > 1 ? ` (${s.attempt}회차)` : ''} ${s.role ?? '—'}${s.result ? ` ${JSON.stringify(s.result)}` : ''}`,
@@ -341,6 +344,50 @@ export async function runsAbortBody(
   return EXIT_OK;
 }
 
+// ---------------------------------------------------------------------------
+// plumb runs prune — 병합 게이트의 뒷정리 (#134). 지우기만 한다. 머지는 사람이 git으로
+// ---------------------------------------------------------------------------
+
+export interface PruneOptions {
+  merged: boolean;
+  olderThan?: string;
+  dryRun: boolean;
+  json: boolean;
+}
+
+const PRUNE_REASON_LABEL: Record<PrunedBranch['reason'], string> = { merged: '머지됨', 'older-than': '오래됨' };
+
+export function runsPruneText(pruned: PrunedBranch[], dryRun: boolean): string {
+  if (pruned.length === 0) return '정리할 plumb/* 브랜치 없음\n';
+  const lines = pruned.map((b) => {
+    const head = dryRun ? '삭제 예정' : b.deleted ? '삭제' : '삭제 실패';
+    const tail = b.error ? ` — ${b.error.split('\n')[0]}` : '';
+    return `${head}: ${b.name} @ ${b.sha.slice(0, 7)} (${PRUNE_REASON_LABEL[b.reason]} · ${b.committedAt})${tail}`;
+  });
+  return `${lines.join('\n')}\n`;
+}
+
+export async function runsPruneBody(ctx: RunCliContext, opened: OpenedStore, options: PruneOptions): Promise<number> {
+  let olderThanDays: number | undefined;
+  if (options.olderThan !== undefined) {
+    olderThanDays = Number(options.olderThan);
+    if (!Number.isInteger(olderThanDays) || olderThanDays < 0) {
+      ctx.stderr.write(`plumb runs prune: --older-than <days>는 0 이상의 정수여야 한다: ${options.olderThan}\n`);
+      return EXIT_INPUT;
+    }
+  }
+  const pruned = await pruneRunBranches({
+    serviceRoot: resolve(opened.loaded.root, opened.config.service),
+    merged: options.merged,
+    ...(olderThanDays === undefined ? {} : { olderThanDays }),
+    dryRun: options.dryRun,
+    ...(ctx.now === undefined ? {} : { now: ctx.now }),
+  });
+  if (options.json) writeJson(ctx, { dryRun: options.dryRun, branches: pruned });
+  else ctx.stdout.write(runsPruneText(pruned, options.dryRun));
+  return pruned.some((b) => b.error !== undefined) ? EXIT_ERROR : EXIT_OK;
+}
+
 export function registerRunCommands(program: Command, ctx: RunCliContext): void {
   program
     .command('run')
@@ -394,5 +441,17 @@ export function registerRunCommands(program: Command, ctx: RunCliContext): void 
       await runCommand(ctx, async () =>
         runsAbortBody(ctx, await openTargetStore(ctx, targetOf(command)), runId as RunId, options.json),
       );
+    });
+  runs
+    .command('prune')
+    .description(
+      '실행 결과 브랜치 plumb/*를 정리한다 — 머지된 것(기본) 또는 --older-than <days>보다 오래된 것. 머지는 하지 않는다',
+    )
+    .option('--merged', 'HEAD에 머지된 브랜치를 지운다 (옵션이 없을 때의 기본)', false)
+    .option('--older-than <days>', '끝 커밋이 N일보다 오래된 브랜치를 지운다 (머지 여부 무관)')
+    .option('--dry-run', '지우지 않고 대상만 출력한다', false)
+    .option('--json', '기계용 JSON 출력', false)
+    .action(async (options: PruneOptions, command: Command) => {
+      await runCommand(ctx, async () => runsPruneBody(ctx, await openTargetStore(ctx, targetOf(command)), options));
     });
 }

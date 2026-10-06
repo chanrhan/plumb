@@ -172,6 +172,11 @@ export interface RunState {
   commits?: { from: string; to: string };
   /** 작업 worktree. 중단해도 테스트 파일과 구현은 여기 남는다 */
   worktree?: string;
+  /**
+   * ⑥ 뒤 원본 서비스 레포에 만든 브랜치 `plumb/<run-id>` — ②③ 결과 커밋(`commits.to`)을 가리킨다 (결정 #122 "병합 게이트").
+   * 머지는 사람이 한다(`git merge plumb/r-0003`). 브랜치를 못 만들었으면 없음 + 로그. 주입 커밋은 들어가지 않는다
+   */
+  branch?: string;
 }
 
 /** 실행 목록 한 행 (`GET /api/runs`). RunState의 부분집합 */

@@ -3,9 +3,11 @@
  * 실제 SDK 실행은 env/local(PR 검증 증거).
  */
 
+import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { PipelineDeps, PipelineResult } from '../../run/pipeline.js';
 import { newRunState } from '../../run/state.js';
@@ -379,5 +381,103 @@ describe('plumb runs', () => {
     expect(runsListText([])).toMatch(/실행 기록 없음/);
     const s = newRunState({ id: 'r-0001', ruleIds: [RULE.id], config: CONFIG as never, now });
     expect(runShowText(s)).toMatch(/마지막 출력: 아직 실행 출력 없음/);
+    expect(runShowText(s)).not.toMatch(/브랜치/);
+  });
+
+  it('show: RunState.branch가 있으면 브랜치 줄 (git merge 안내)', async () => {
+    const store = openStore(CONFIG, dir);
+    await store.init();
+    const s = newRunState({ id: 'r-0005', ruleIds: [RULE.id], config: CONFIG as never, now });
+    await store.runs.write({
+      ...s,
+      status: 'completed',
+      stage: 6,
+      finishedAt: now().toISOString(),
+      commits: { from: 'a'.repeat(40), to: 'b'.repeat(40) },
+      branch: 'plumb/r-0005',
+    });
+    const h = harness();
+    await h.run(['runs', 'show', 'r-0005']);
+    expect(h.out.join('')).toMatch(/^브랜치 plumb\/r-0005 \(git merge plumb\/r-0005\)$/m);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// plumb runs prune (#134, 결정 #122) — 대상 루트(= 서비스 루트)가 임시 git 레포
+// ---------------------------------------------------------------------------
+describe('plumb runs prune', () => {
+  const exec = promisify(execFile);
+  const ID = ['-c', 'user.name=t', '-c', 'user.email=t@t'];
+  const sh = async (args: string[], env: NodeJS.ProcessEnv = {}) =>
+    (await exec('git', [...ID, ...args], { cwd: dir, env: { ...process.env, ...env } })).stdout.trim();
+  const branches = async () =>
+    (await sh(['branch', '--list', 'plumb/*', '--format=%(refname:short)'])).split('\n').filter(Boolean);
+
+  beforeEach(async () => {
+    // main: init → (r-0001 = 머지됨, main의 조상) · work: 2026-01-01 커밋 (r-0002 = 머지 안 됨 · 오래됨) · main 전진
+    await exec('git', ['init', '-q', '-b', 'main', dir]);
+    await sh(['add', '-A']);
+    await sh(['commit', '-q', '-m', 'init']);
+    await sh(['branch', 'plumb/r-0001', 'HEAD']);
+    await sh(['checkout', '-q', '-b', 'work']);
+    await writeFile(join(dir, 'c.txt'), 'c\n');
+    await sh(['add', '-A']);
+    await sh(['commit', '-q', '-m', '②③ 결과'], {
+      GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
+      GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z',
+    });
+    await sh(['branch', 'plumb/r-0002', 'HEAD']);
+    await sh(['checkout', '-q', 'main']);
+    await writeFile(join(dir, 'a.txt'), 'a\n');
+    await sh(['add', '-A']);
+    await sh(['commit', '-q', '-m', 'main 전진']);
+  });
+
+  it('--dry-run: 머지된 브랜치 목록만, 지우지 않는다', async () => {
+    const h = harness();
+    await h.run(['runs', 'prune', '--dry-run']);
+    expect(h.exits).toEqual([]);
+    expect(h.out.join('')).toMatch(/^삭제 예정: plumb\/r-0001 @ [0-9a-f]{7} \(머지됨 · /m);
+    expect(h.out.join('')).not.toMatch(/r-0002/);
+    expect(await branches()).toEqual(['plumb/r-0001', 'plumb/r-0002']);
+  });
+
+  it('기본(옵션 없음) = --merged: 머지된 것만 지우고 머지 안 된 것은 남긴다 · --json', async () => {
+    const h = harness();
+    await h.run(['runs', 'prune', '--json']);
+    expect(h.exits).toEqual([]);
+    const out = JSON.parse(h.out.join(''));
+    expect(out.dryRun).toBe(false);
+    expect(
+      out.branches.map((b: { name: string; reason: string; deleted: boolean }) => [b.name, b.reason, b.deleted]),
+    ).toEqual([['plumb/r-0001', 'merged', true]]);
+    expect(await branches()).toEqual(['plumb/r-0002']);
+    const h2 = harness();
+    await h2.run(['runs', 'prune']);
+    expect(h2.out.join('')).toMatch(/정리할 plumb\/\* 브랜치 없음/);
+  });
+
+  it('--older-than <days>: 머지 안 됐어도 끝 커밋이 오래됐으면 지운다. --merged를 같이 주면 둘 다', async () => {
+    const h = harness();
+    await h.run(['runs', 'prune', '--older-than', '30', '--dry-run']);
+    expect(h.out.join('')).toMatch(/^삭제 예정: plumb\/r-0002 @ [0-9a-f]{7} \(오래됨 · 2026-01-01T00:00:00/m);
+    expect(h.out.join('')).not.toMatch(/r-0001/);
+    const h2 = harness();
+    await h2.run(['runs', 'prune', '--merged', '--older-than', '30']);
+    expect(h2.exits).toEqual([]);
+    const text = h2.out.join('');
+    expect(text).toMatch(/^삭제: plumb\/r-0001 .*\(머지됨/m);
+    expect(text).toMatch(/^삭제: plumb\/r-0002 .*\(오래됨/m);
+    expect(await branches()).toEqual([]);
+    // main · work는 건드리지 않는다
+    expect((await sh(['branch', '--format=%(refname:short)'])).split('\n').sort()).toEqual(['main', 'work']);
+  });
+
+  it('--older-than이 정수가 아니면 exit 2', async () => {
+    const h = harness();
+    await h.run(['runs', 'prune', '--older-than', 'abc']);
+    expect(h.exits).toEqual([2]);
+    expect(h.err.join('')).toMatch(/--older-than/);
+    expect(await branches()).toEqual(['plumb/r-0001', 'plumb/r-0002']);
   });
 });
