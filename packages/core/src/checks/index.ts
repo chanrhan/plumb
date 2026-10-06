@@ -3,6 +3,7 @@
  * 상태 · 범위 밖 · 공통 검사 · 집계(#46). `plumb check` 조립(`run-check.ts`, #47).
  */
 
+export * from './blocks.js';
 export * from './common.js';
 export * from './diff-search.js';
 export * from './junit.js';
