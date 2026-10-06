@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { COOKIE, isValidSession, unauthorizedBody } from '@/lib/auth';
 
 /**
- * 세션 쿠키 검사 (`docs/screens/README.md` 3.2 6단계). `/api/**` 전부와 `/views` `/rules` `/runs` 페이지에 건다.
+ * 세션 쿠키 검사 (`docs/screens/README.md` 3.2 6단계). `/api/**` 전부와 `/views` `/rules` `/runs` `/queue` 페이지에 건다.
  *
  * - 쿠키가 없거나 틀리면: API는 `401 { code: 'UNAUTHORIZED', message }`, 페이지는 `/no-session`으로 rewrite
  * - `/auth`(쿠키를 심는 곳) · `/no-session` · 정적 파일은 matcher 밖이다
@@ -26,5 +26,15 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-  matcher: ['/api/:path*', '/views/:path*', '/rules/:path*', '/runs/:path*', '/views', '/rules', '/runs'],
+  matcher: [
+    '/api/:path*',
+    '/views/:path*',
+    '/rules/:path*',
+    '/runs/:path*',
+    '/queue/:path*',
+    '/views',
+    '/rules',
+    '/runs',
+    '/queue',
+  ],
 };

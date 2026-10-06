@@ -52,7 +52,7 @@ export function ResolveButton({ id }: ResolveButtonProps) {
         return;
       }
       const data = (await res.json()) as ResolveReviewItemResponse;
-      setOutcome({ kind: 'ok', text: `처리됨 ${data.item.resolvedAt}` });
+      setOutcome({ kind: 'ok', text: `처리됨 ${data.item.resolvedAt} · ${data.item.resolvedBy ?? 'ui'}` });
       router.refresh();
     } catch (error) {
       setOutcome({ kind: 'error', text: `요청 실패: ${error instanceof Error ? error.message : String(error)}` });

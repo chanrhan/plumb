@@ -1,7 +1,7 @@
 /**
  * 검토 대기열 `review-queue/<q-id>.json` (기획안 §9.2, 타입 `ReviewQueueItem`). 오케스트레이터가 올리고(실패 · 예산 초과 · 이의 제기 ·
  * 미판정 주입), 사람이 `/queue` 화면(#120)에서 처리한다. `store.status().reviewQueue`는 `resolvedAt` 없는 항목 수.
- * 처리(`resolveReviewItem`)는 `resolvedAt`만 쓴다 — 판정 결과를 규칙 상태에 반영하는 것은 M10-17.
+ * 처리(`resolveReviewItem`)는 `resolvedAt` · `resolvedBy` · `note`를 쓴다(#130) — 판정 결과를 규칙 상태에 반영하는 것은 M10-17.
  */
 
 import type { ReviewQueueItem, ReviewQueueItemId } from '../types/index.js';
@@ -42,6 +42,10 @@ function parseItem(raw: unknown, where: string): ReviewQueueItem {
   if (typeof r.summary !== 'string' || r.summary.trim().length === 0)
     throw new ValidationError(`${where}: summary 필요`);
   if (typeof r.createdAt !== 'string') throw new ValidationError(`${where}: createdAt 필요`);
+  // #130 이전에 쓰인 파일에는 없는 필드 — 없으면 그대로 통과, 있으면 문자열
+  if (r.resolvedBy !== undefined && typeof r.resolvedBy !== 'string')
+    throw new ValidationError(`${where}: resolvedBy는 문자열`);
+  if (r.note !== undefined && typeof r.note !== 'string') throw new ValidationError(`${where}: note는 문자열`);
   return r as ReviewQueueItem;
 }
 
@@ -98,9 +102,8 @@ export interface ResolveReviewInput {
 }
 
 /**
- * 처리 — `resolvedAt`을 쓴다. 없는 id면 {@link ReviewItemNotFoundError}, 이미 처리된 항목이면 `ValidationError`(→ API 409).
- * `by` · `note`는 입력 검증만 한다: `ReviewQueueItem`에 그 자리가 없어(타입은 이 이슈 범위 밖) 파일에는 남지 않는다 —
- * 남기려면 타입 필드 추가가 먼저다. 판정 결과를 규칙 상태(🟠 보류)에 잇는 것은 M10-17
+ * 처리 — `resolvedAt` · `resolvedBy`(= `by`) · `note`(있을 때만)를 파일에 쓴다 (#130). 없는 id면 {@link ReviewItemNotFoundError},
+ * 이미 처리된 항목이면 `ValidationError`(→ API 409). 판정 결과를 규칙 상태(🟠 보류)에 잇는 것은 M10-17
  */
 export async function resolveReviewItem(
   paths: StorePaths,
@@ -117,7 +120,13 @@ export async function resolveReviewItem(
   if (item === undefined) throw new ReviewItemNotFoundError(id);
   if (item.resolvedAt !== undefined)
     throw new ValidationError(`reviewQueue.resolve: ${id}은(는) 이미 처리됐다 (${item.resolvedAt})`);
-  const resolved: ReviewQueueItem = { ...item, resolvedAt: now().toISOString() };
+  const note = input.note?.trim();
+  const resolved: ReviewQueueItem = {
+    ...item,
+    resolvedAt: now().toISOString(),
+    resolvedBy: input.by.trim(),
+    ...(note === undefined || note.length === 0 ? {} : { note }),
+  };
   await writeJsonAtomic(paths.reviewQueueItem(id), resolved);
   return resolved;
 }

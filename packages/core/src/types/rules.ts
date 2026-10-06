@@ -417,6 +417,10 @@ export interface ReviewQueueItem {
   summary: string;
   createdAt: string;
   resolvedAt?: string;
+  /** 처리한 사람 · 통로 (`ui` · `cli`). `resolvedAt`과 함께 적힌다 (#130). 그 전에 쓰인 파일에는 없다 */
+  resolvedBy?: string;
+  /** 처리 메모 한 줄 — 왜 처리했는가 (#130). 선택 */
+  note?: string;
 }
 
 // ---------------------------------------------------------------------------

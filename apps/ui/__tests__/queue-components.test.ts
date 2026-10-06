@@ -2,6 +2,7 @@
  * 이슈 #120 "완료 증거" — 목록 렌더: `ReviewQueueItem` 픽스처(`plumb run`이 `review-queue/`에 쓰는 모양)만 넣고 `renderToStaticMarkup`으로 그린다.
  * 종류 여섯 라벨 · 요지 · 규칙 링크 `/rules/<id>` · 실행 링크 `/runs?id=` · 생성 시각 · 열린 행의 `[처리]` · 처리된 행의 `처리됨` · 빈 목록 두 가지 ·
  * 필터(기본 열린 것만 · `show=resolved`). JSX 없이 `createElement`로 둔 것은 `runs-components.test.ts`와 같은 이유(vitest 설정을 건드리지 않는다).
+ * 이슈 #130: 처리된 행에 처리자(`resolvedBy`) · 메모(`note`)가 `처리됨 <시각> · ui · <메모>`로 붙는다. 두 필드 없는 옛 항목은 `처리됨 <시각>` 그대로.
  */
 
 import type { ReviewQueueItem } from '@plumb/core';
@@ -14,7 +15,7 @@ vi.mock('next/link', () => ({
   default: ({ href, children }: { href: string; children: unknown }) => createElement('a', { href }, children as never),
 }));
 
-import { QUEUE_KIND_LABEL, queueHeadline, queueTime } from '@/components/queue/format';
+import { QUEUE_KIND_LABEL, queueHeadline, queueTime, resolvedLine } from '@/components/queue/format';
 import { QueueList } from '@/components/queue/queue-list';
 import { ResolveButton } from '@/components/queue/resolve-button';
 import { applyReviewQueueFilter, parseResolveBody, parseReviewQueueFilter } from '@/lib/queue';
@@ -33,7 +34,7 @@ const DISPUTE: ReviewQueueItem = {
   createdAt: '2026-10-02T05:10:00.000Z',
 };
 
-/** 처리된 실행 실패 */
+/** 처리된 실행 실패 — #120 시절 모양(`resolvedAt`만, 처리자 · 메모 없음) */
 const FAILED: ReviewQueueItem = {
   id: 'q-0002',
   kind: 'run-failed',
@@ -42,6 +43,19 @@ const FAILED: ReviewQueueItem = {
   summary: '실행 실패: stopBlockLimit',
   createdAt: '2026-10-02T06:00:00.000Z',
   resolvedAt: '2026-10-02T07:00:00.000Z',
+};
+
+/** 처리된 이의 제기 — 처리자 · 메모가 적힌 항목 (#130) */
+const RESOLVED_WITH_NOTE: ReviewQueueItem = {
+  id: 'q-0004',
+  kind: 'dispute',
+  ruleIds: ['pay.refund-window'],
+  runId: 'r-0004',
+  summary: '경계값 이의 제기',
+  createdAt: '2026-10-03T02:00:00.000Z',
+  resolvedAt: '2026-10-03T03:00:00.000Z',
+  resolvedBy: 'ui',
+  note: '테스트가 맞다',
 };
 
 /** 설계 변경 — 실행 · 규칙 없이 결정 기록만 */
@@ -124,6 +138,23 @@ describe('QueueList', () => {
     expect(html).toContain('<td>—</td>'); // 설계 변경에는 실행 없음
     // [처리] 버튼은 열린 설계 변경 하나뿐
     expect(html.match(/>처리<\/button>/g)).toHaveLength(1);
+  });
+
+  it('처리된 행에 처리자 · 메모: "처리됨 <시각> · ui · <메모>" (#130). 없는 옛 항목은 시각만', () => {
+    expect(resolvedLine(RESOLVED_WITH_NOTE)).toBe(
+      `처리됨 ${queueTime('2026-10-03T03:00:00.000Z')} · ui · 테스트가 맞다`,
+    );
+    expect(resolvedLine(FAILED)).toBe(`처리됨 ${queueTime(FAILED.resolvedAt ?? '')}`);
+    expect(resolvedLine({ resolvedAt: '2026-10-03T03:00:00.000Z', resolvedBy: 'cli' })).toBe(
+      `처리됨 ${queueTime('2026-10-03T03:00:00.000Z')} · cli`,
+    );
+    expect(resolvedLine(DISPUTE)).toBe('');
+
+    const html = render(createElement(QueueList, { items: [RESOLVED_WITH_NOTE, FAILED], totalCount: 2 }));
+    expect(html).toContain(`처리됨 ${queueTime('2026-10-03T03:00:00.000Z')} · ui · 테스트가 맞다`);
+    expect(html).toContain('title="테스트가 맞다"');
+    expect(html).toContain(`처리됨 ${queueTime(FAILED.resolvedAt ?? '')}</td>`);
+    expect(html).not.toContain('>처리</button>');
   });
 
   it('ResolveButton 단독 — 활성 버튼, 결과 줄 없음', () => {

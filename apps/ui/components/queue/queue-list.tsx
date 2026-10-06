@@ -1,6 +1,6 @@
 import type { ReviewQueueItem } from '@plumb/core';
 import Link from 'next/link';
-import { OPEN_MARK, QUEUE_KIND_LABEL, queueTime } from './format';
+import { OPEN_MARK, QUEUE_KIND_LABEL, queueTime, resolvedLine } from './format';
 import { ResolveButton } from './resolve-button';
 
 export interface QueueListProps {
@@ -12,7 +12,7 @@ export interface QueueListProps {
 
 /**
  * 검토 대기열 목록 (#120). 한 행 = `review-queue/<q-id>.json` 하나: 종류 · 요지 · 규칙(→ `/rules/<id>`) · 실행(→ `/runs?id=`) · 생성 시각 ·
- * `[처리]`(열린 것만, 처리된 것은 `resolvedAt`). 목 데이터는 없다 — 비면 "아직 없음"
+ * `[처리]`(열린 것만). 처리된 행은 `처리됨 <시각> · <처리자> · <메모>`(#130 — `resolvedBy` · `note`가 파일에 있을 때만). 목 데이터는 없다 — 비면 "아직 없음"
  */
 export function QueueList({ items, totalCount }: QueueListProps) {
   if (totalCount === 0) {
@@ -76,7 +76,9 @@ export function QueueList({ items, totalCount }: QueueListProps) {
                 )}
               </td>
               <td>{queueTime(item.createdAt)}</td>
-              <td>{open ? <ResolveButton id={item.id} /> : `처리됨 ${queueTime(item.resolvedAt ?? '')}`}</td>
+              <td className="queue-resolved" title={item.note}>
+                {open ? <ResolveButton id={item.id} /> : resolvedLine(item)}
+              </td>
             </tr>
           );
         })}
