@@ -48,7 +48,15 @@ import { initStore, type StoreMeta } from './init.js';
 import { latestInjection, listInjections, writeInjection } from './injections.js';
 import { type StorePaths, storePaths } from './paths.js';
 import { getProposal, listProposals, writeProposal } from './proposals.js';
-import { type EnqueueInput, enqueueReviewItem, listReviewQueue, nextReviewQueueId } from './review-queue.js';
+import {
+  type EnqueueInput,
+  enqueueReviewItem,
+  getReviewItem,
+  listReviewQueue,
+  nextReviewQueueId,
+  type ResolveReviewInput,
+  resolveReviewItem,
+} from './review-queue.js';
 import { getRuleStatus, listRuleStatuses, writeRuleStatuses } from './rule-status.js';
 import { getRule, listRules } from './rules.js';
 import { activeRun, listRuns, nextRunId, readRunState, writeRunState } from './runs.js';
@@ -190,10 +198,14 @@ export interface Store {
     /** 진행 중인 실행. 동시 1개 (work-run 6절 1번) */
     active(): Promise<RunSummary | undefined>;
   };
-  /** 검토 대기열 `review-queue/<q-id>.json` (기획안 §9.2). 판정 화면은 M10 */
+  /** 검토 대기열 `review-queue/<q-id>.json` (기획안 §9.2). 화면은 `/queue`(#120) — `resolve`가 `resolvedAt`을 쓰는 유일한 길 */
   reviewQueue: {
     enqueue(input: EnqueueInput): Promise<ReviewQueueItem>;
     list(openOnly?: boolean): Promise<ReviewQueueItem[]>;
+    /** 없으면 `undefined` (→ API 404) */
+    get(id: ReviewQueueItemId): Promise<ReviewQueueItem | undefined>;
+    /** 없는 id → `ReviewItemNotFoundError`, 이미 처리 → `ValidationError` */
+    resolve(id: ReviewQueueItemId, input: ResolveReviewInput): Promise<ReviewQueueItem>;
     nextId(): Promise<ReviewQueueItemId>;
   };
   /**
@@ -269,6 +281,8 @@ export function openStore(config: StoreConfig, root: string, options: StoreOptio
     reviewQueue: {
       enqueue: (input) => enqueueReviewItem(paths, input, options.now),
       list: (openOnly) => listReviewQueue(paths, openOnly),
+      get: (id) => getReviewItem(paths, id),
+      resolve: (id, input) => resolveReviewItem(paths, id, input, options.now),
       nextId: () => nextReviewQueueId(paths),
     },
     injections: {
